@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Glasses Hub">
+<meta name="theme-color" content="#171a21">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<title>Glasses Hub</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --text:#e7e9ee; --dim:#9aa3b2; --faint:#6b7383;
+  --accent:#5aa9ff; --good:#3ecf8e; --warn:#f5b84b; --bad:#ff6b6b;
+  --r:14px; --safe-b:env(safe-area-inset-bottom); --safe-t:env(safe-area-inset-top);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;background:var(--panel);color:var(--text);font:16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}
+body{display:flex;flex-direction:column;overscroll-behavior:none;position:fixed;top:0;left:0;right:0;height:var(--app-h,100%);overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+header{padding:calc(var(--safe-t) + 10px) 16px 10px;display:flex;align-items:center;gap:10px;background:var(--bg);border-bottom:1px solid var(--line)}
+header h1{font-size:18px;margin:0;font-weight:700}
+.pill{margin-left:auto;font-size:12px;padding:3px 9px;border-radius:999px;background:var(--panel2);color:var(--dim);white-space:nowrap}
+.pill.ok{background:rgba(62,207,142,.15);color:var(--good)}
+.pill.warn{background:rgba(245,184,75,.15);color:var(--warn)}
+.pill.err{background:rgba(255,107,107,.15);color:var(--bad)}
+main{flex:1;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px 20px}
+nav{display:flex;border-top:1px solid var(--line);background:var(--panel);padding-bottom:var(--safe-b)}
+html.ios-band nav{padding-bottom:4px}
+nav button{flex:1;background:none;border:0;padding:9px 0 8px;color:var(--faint);font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav button svg{width:22px;height:22px}
+nav button.on{color:var(--accent)}
+.view{display:none}.view.on{display:block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.card h2{font-size:16px;margin:0 0 8px}
+label{display:block;font-size:13px;color:var(--dim);margin:10px 0 5px}
+input[type=text],input[type=number]{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px 12px;outline:none;font-size:16px}
+input:focus{border-color:var(--accent)}
+#code{font:600 20px/1.2 ui-monospace,Menlo,monospace;letter-spacing:1px;text-transform:uppercase;text-align:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--panel2);border-radius:12px;padding:11px 14px;font-weight:600;font-size:15px;min-height:46px}
+.btn:active{transform:scale(.98)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#06121f}
+.btn.danger{color:var(--bad)}
+.btn.small{min-height:36px;padding:7px 11px;font-size:13px;border-radius:10px}
+.btn[disabled]{opacity:.45}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row>.btn{flex:1}
+.hint{font-size:13px;color:var(--faint);margin-top:6px}
+.hint b{color:var(--dim)}
+.state{font-size:14px;color:var(--dim);margin-bottom:10px}
+.state .ok{color:var(--good)} .state .warn{color:var(--warn)} .state .err{color:var(--bad)}
+.plug{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+.plug:first-of-type{border-top:0;padding-top:0;margin-top:0}
+.plug .head{display:flex;align-items:center;gap:10px}
+.plug .head b{font-size:16px}
+.plug .sub{font-size:13px;color:var(--faint);margin:3px 0 9px}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.acts .btn{min-height:50px;font-size:14px}
+.switch{margin-left:auto;position:relative;width:50px;height:30px;flex:none}
+.switch input{opacity:0;width:0;height:0}
+.switch span{position:absolute;inset:0;background:var(--panel2);border:1px solid var(--line);border-radius:999px;transition:.2s}
+.switch span:before{content:"";position:absolute;width:24px;height:24px;left:2px;top:2px;background:var(--dim);border-radius:50%;transition:.2s}
+.switch input:checked+span{background:rgba(62,207,142,.25);border-color:var(--good)}
+.switch input:checked+span:before{transform:translateX(20px);background:var(--good)}
+.note{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.note.nfl{border-left-color:#e31837}.note.trivia{border-left-color:#b48cff}.note.facts{border-left-color:var(--good)}.note.send{border-left-color:var(--warn)}
+.note .t{font-weight:600}
+.note .b{color:var(--dim);font-size:14px;margin-top:2px}
+.note .m{color:var(--faint);font-size:12px;margin-top:4px}
+.empty{color:var(--faint);text-align:center;padding:30px 10px;font-size:14px}
+.install{border-color:var(--warn)}
+.install ol{margin:6px 0 0;padding-left:20px;color:var(--dim);font-size:14px}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(var(--safe-b) + 72px);background:#2b3140;border:1px solid var(--line);color:var(--text);padding:11px 14px;border-radius:12px;font-size:14px;opacity:0;transform:translateY(8px);transition:.2s;pointer-events:none;z-index:20}
+#toast.on{opacity:1;transform:none}
+html.ios-band #toast{bottom:76px}
+</style>
+</head>
+<body>
+<header>
+  <h1>👓 Glasses Hub</h1>
+  <span class="pill" id="pill">Not paired</span>
+</header>
+<main>
+  <!-- ======================= HOME ======================= -->
+  <section class="view on" id="v-home">
+    <div class="card install" id="installCard" hidden>
+      <h2>Add this to your Home Screen first</h2>
+      <div class="hint" style="margin-top:0">iPhone only allows notifications for web apps opened from the Home Screen.</div>
+      <ol>
+        <li>Tap the <b>Share</b> button in Safari.</li>
+        <li>Choose <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+        <li>Open <b>Glasses Hub</b> from your Home Screen and pair there.</li>
+      </ol>
+    </div>
+
+    <div class="card" id="pairCard">
+      <h2>Pair with your PC</h2>
+      <div class="hint" style="margin-top:0">Open <b>Glasses Hub</b> on your Windows PC and type the pairing code it shows.</div>
+      <label for="code">Pairing code</label>
+      <input type="text" id="code" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      <div class="row" style="margin-top:12px"><button class="btn primary" id="pairBtn">Pair and turn on notifications</button></div>
+      <div class="hint" id="pairMsg"></div>
+    </div>
+
+    <div class="card" id="connCard" hidden>
+      <h2 id="connTitle">Connected</h2>
+      <div class="state" id="connState"></div>
+      <div class="row">
+        <button class="btn" id="testBtn">Send a test</button>
+        <button class="btn" id="fixBtn" hidden>Turn on notifications</button>
+      </div>
+    </div>
+
+    <div class="card" id="plugCard" hidden>
+      <h2>Plug-ins</h2>
+      <div id="plugins"><div class="empty">Waiting for your PC…</div></div>
+    </div>
+  </section>
+
+  <!-- ======================= HISTORY ======================= -->
+  <section class="view" id="v-history">
+    <div class="row" style="margin-bottom:10px"><button class="btn small" id="clearBtn">Clear history</button></div>
+    <div id="history"><div class="empty">Notes your PC sends will be listed here.</div></div>
+  </section>
+
+  <!-- ======================= SETTINGS ======================= -->
+  <section class="view" id="v-settings">
+    <div class="card">
+      <h2>This phone</h2>
+      <label for="s-name">Name (shown on your PC)</label>
+      <input type="text" id="s-name" maxlength="30">
+      <label>Glasses line widths (characters)</label>
+      <div class="row">
+        <input type="number" id="s-tw" min="20" max="200" inputmode="numeric" style="flex:1" aria-label="Top line width">
+        <input type="number" id="s-bw" min="20" max="200" inputmode="numeric" style="flex:1" aria-label="Second line width">
+      </div>
+      <div class="hint">Top line and second line. 70 and 70 fit the RayNeo iO; your PC formats every note to fit.</div>
+      <div class="row" style="margin-top:12px"><button class="btn primary" id="saveBtn">Save</button></div>
+    </div>
+    <div class="card">
+      <h2>Connection</h2>
+      <div class="state" id="setState"></div>
+      <div class="row">
+        <button class="btn" id="repairBtn">Re-pair</button>
+        <button class="btn danger" id="forgetBtn">Disconnect</button>
+      </div>
+      <div class="hint">Disconnect removes this phone from your PC and turns off its notifications.</div>
+    </div>
+    <div class="card">
+      <h2>About</h2>
+      <div class="hint" style="margin-top:0">Glasses Hub <span id="ver"></span>. Notes are end-to-end encrypted: the relay and Apple's push service can't read them. Nothing is stored anywhere but your phone and your PC.</div>
+    </div>
+  </section>
+</main>
+<nav id="tabs">
+  <button data-v="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="13" r="3.5"/><circle cx="17.5" cy="13" r="3.5"/><path d="M10 12.5c1.3-1 2.7-1 4 0M3 12l1-5M21 12l-1-5"/></svg>Home</button>
+  <button data-v="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>History</button>
+  <button data-v="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
+</nav>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
