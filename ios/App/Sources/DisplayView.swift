@@ -43,6 +43,11 @@ struct DisplayView: View {
             .buttonStyle(.borderedProminent)
             .tint(link.isRunning ? Color.red : Color.accentColor)
             .controlSize(.large)
+            Toggle("Pop up only when something comes in", isOn: $model.popUps)
+            if model.popUps, !link.isRunning {
+                Text("Waiting. The display opens by itself for scores, a finished timer, PC notes and facts, then closes. Leave this app running in the background.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
             if !link.isRunning {
                 Text("Keep the RayNeo app connected to your glasses. To leave the display from the glasses, hold the crown.")
                     .font(.footnote).foregroundStyle(.secondary)

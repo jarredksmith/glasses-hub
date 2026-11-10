@@ -104,6 +104,10 @@ final class HubModel: ObservableObject {
     @Published var customFeed: String { didSet { defaults.set(customFeed, forKey: "customFeed"); newsDue = .distantPast } }
     @Published var headlineSeconds: Double { didSet { defaults.set(headlineSeconds, forKey: "headlineSeconds") } }
 
+    /// Pop-up mode: the display stays closed until something comes in, opens for it, then closes again.
+    @Published var popUps: Bool { didSet { defaults.set(popUps, forKey: "popUps"); popFactDue = Date().addingTimeInterval(max(1, popFactMinutes) * 60); applyKeepAwake(); if popUps { pc.resume() } } }
+    @Published var popFactMinutes: Double { didSet { defaults.set(popFactMinutes, forKey: "popFactMinutes"); popFactDue = Date().addingTimeInterval(max(1, popFactMinutes) * 60) } }
+
     @Published var leagues: Set<League> { didSet { defaults.set(leagues.map(\.rawValue).sorted(), forKey: "leagues"); scoresDue = .distantPast } }
     @Published var teams: String { didSet { defaults.set(teams, forKey: "teams"); lastGame = nil } }
     @Published var scoreAlerts: Bool { didSet { defaults.set(scoreAlerts, forKey: "scoreAlerts") } }
@@ -165,6 +169,10 @@ final class HubModel: ObservableObject {
     private var lastGame: Game?
     private var watched = [String: Game]()
     private var pager = AutoPager()
+    private var popupOpen = false
+    private var popFactDue = Date.distantFuture
+    /// Alerts queued for a pop-up that hasn't opened yet, kept so they can go out as notifications if it can't.
+    private var unshown = [(title: String, body: String)]()
     private var nextGames = [String: (game: Game?, at: Date)]()
     private var newsDue = Date.distantPast
     private var headlineTurnedAt = Date()
@@ -202,6 +210,8 @@ final class HubModel: ObservableObject {
         newsSources = Set(d.stringArray(forKey: "newsSources") ?? [NewsSource.builtIn[0].url, NewsSource.builtIn[1].url])
         customFeed = d.string(forKey: "customFeed") ?? ""
         headlineSeconds = number("headlineSeconds", 12)
+        popUps = bool("popUps", false)
+        popFactMinutes = number("popFactMinutes", 30)
         leagues = Set((d.stringArray(forKey: "leagues") ?? ["nfl"]).compactMap(League.init(rawValue:)))
         teams = d.string(forKey: "teams") ?? "KC"
         scoreAlerts = bool("scoreAlerts", true)
@@ -226,6 +236,8 @@ final class HubModel: ObservableObject {
         timer = HubTimer(minutes: minutes)
 
         calendarAllowed = calendar.allowed
+        popFactDue = Date().addingTimeInterval(max(1, popFactMinutes) * 60)
+        applyKeepAwake()
         link.onEnded = { [weak self] reason in self?.displayEnded(reason) }
         pc.onNote = { [weak self] note in self?.received(note) }
         Notifier.shared.setUp()
@@ -257,9 +269,9 @@ final class HubModel: ObservableObject {
 
     func stopDisplay() {
         link.stop()
-        overlays.clear()
+        overlays.clear(); unshown.removeAll(); popupOpen = false
         applyKeepAwake()
-        if !inFront { pc.pause() }
+        if !inFront && !popUps { pc.pause() }
     }
 
     func scene(active: Bool) {
@@ -267,21 +279,29 @@ final class HubModel: ObservableObject {
         if active {
             pc.resume()
             Task { await refreshPermissions() }
-        } else if !link.isRunning {
+        } else if !link.isRunning && !popUps {
             pc.pause()                      // nothing keeps the app awake without the display, so don't pretend
         }
         applyKeepAwake()
     }
 
     private func applyKeepAwake() {
-        keepAwake.set(runWhenLocked && link.isRunning)
+        keepAwake.set(runWhenLocked && (link.isRunning || popUps))
     }
 
     private func displayEnded(_ reason: String) {
         overlays.clear()
         applyKeepAwake()
         endedNotice = reason
-        if !inFront { pc.pause() }          // nothing keeps the app awake now; let the PC switch to Apple push
+        if popupOpen {
+            // A pop-up couldn't open (glasses away, or something else on their screen). Don't lose what
+            // it was for: send it as ordinary notifications instead.
+            popupOpen = false
+            if notificationsAllowed { for item in unshown { Notifier.shared.post(title: item.title, body: item.body) } }
+            unshown.removeAll()
+            return
+        }
+        if !inFront && !popUps { pc.pause() }          // nothing keeps the app awake now; let the PC switch to Apple push
         if !inFront { Notifier.shared.post(title: "Glasses display stopped", body: reason) }
     }
 
@@ -296,9 +316,13 @@ final class HubModel: ObservableObject {
 
     private func tick() {
         let now = Date()
-        let awake = inFront || link.isRunning
+        let awake = inFront || link.isRunning || popUps
         if awake { refreshData(now: now) }
-        if link.isRunning { keepAwake.resume() }
+        if link.isRunning || popUps { keepAwake.resume() }
+        if popUps, !link.isRunning, !overlays.isEmpty {
+            popupOpen = true
+            link.start(size: textSize, refresh: refreshScreen, finishScrollingText: crownScroll)
+        }
 
         // Trivia and the timer move on their own.
         if var playing = round {
@@ -313,8 +337,13 @@ final class HubModel: ObservableObject {
         if !timer.isDone(now: now) { timerAnnounced = false }
 
         var card: Card
-        if let alert = overlays.current(now: now.timeIntervalSinceReferenceDate) { card = alert }
-        else {
+        if popupOpen, !link.isShowing { card = currentCard(now: now) }        // still opening; the alert's clock hasn't started
+        else if let alert = overlays.current(now: now.timeIntervalSinceReferenceDate) { card = alert; unshown.removeAll() }
+        else if popupOpen {
+            popupOpen = false                                                 // everything has been shown: close again
+            link.stop(); applyKeepAwake()
+            card = currentCard(now: now)
+        } else {
             card = currentCard(now: now)
             // Anything taller than the screen is shown a page at a time. Reading stops on the last page;
             // everything else starts over.
@@ -432,7 +461,7 @@ final class HubModel: ObservableObject {
     // MARK: Data
 
     private func refreshData(now: Date) {
-        let wantsScores = !leagues.isEmpty && (program == .scores || (program == .dashboard && dashScores) || (scoreAlerts && link.isRunning))
+        let wantsScores = !leagues.isEmpty && (program == .scores || (program == .dashboard && dashScores) || (scoreAlerts && (link.isRunning || popUps)))
         if wantsScores, now >= scoresDue, fetching.insert("scores").inserted {
             scoresDue = now.addingTimeInterval(15)            // floor; refined when the answer is in
             let wanted = League.allCases.filter { leagues.contains($0) }
@@ -489,6 +518,18 @@ final class HubModel: ObservableObject {
         }
         if program == .news, reading == nil, headlineSeconds > 0, news.count > 1, now.timeIntervalSince(headlineTurnedAt) >= headlineSeconds {
             newsIndex = (newsIndex + 1) % news.count; headlineTurnedAt = now
+        }
+        if popUps, popFactMinutes > 0, now >= popFactDue, !(link.isRunning && !popupOpen), fetching.insert("popfact").inserted {
+            popFactDue = now.addingTimeInterval(popFactMinutes * 60)
+            let day = factsOnThisDay
+            Task {
+                if let fresh = await Feeds.fact(onThisDay: day) {
+                    let head = (self.glyphStyle != .plain ? self.glyphs.note + " " : "") + "Odd fact"
+                    self.overlays.push(Card([head] + TextLayout.wrap(fresh, width: self.screen.columns, maxLines: self.screen.rows - 1)), seconds: max(self.alertSeconds, 15))
+                    self.unshown.append(("Odd fact", fresh))
+                }
+                self.fetching.remove("popfact")
+            }
         }
         if program == .facts, now >= factDue, fetching.insert("fact").inserted {
             factDue = now.addingTimeInterval(max(1, factMinutes) * 60)
@@ -554,28 +595,30 @@ final class HubModel: ObservableObject {
 
     /// Something worth interrupting for. Goes to the display, a notification, or both, per the setting.
     /// An alert from the program already on screen isn't shown over itself.
+    /// True when an alert can go to the display: it's on, or pop-up mode will open it.
+    private var reachable: Bool { link.isShowing || popUps }
+
     private func alert(_ lines: [String], source: Program?) {
-        let showing = link.isShowing
-        let onDisplay = (alertStyle == .display || alertStyle == .both || (alertStyle == .auto && showing)) && showing
-        let asNotification = alertStyle == .notification || alertStyle == .both || (alertStyle == .auto && !showing)
-        if onDisplay, source == nil || source != program || source == .scores {
+        let onDisplay = reachable && alertStyle != .notification
+        let asNotification = alertStyle == .notification || alertStyle == .both || (alertStyle == .auto && !reachable)
+        let body = lines.dropFirst().joined(separator: ". ")
+        if onDisplay, !link.isShowing || popupOpen || source == nil || source != program || source == .scores {
             var fitted = [String]()
             if let first = lines.first { fitted.append(TextLayout.headline(first, screen: screen)) }
             for line in lines.dropFirst() { fitted += TextLayout.wrap(line, width: screen.columns) }
             overlays.push(Card(Array(fitted.prefix(screen.rows))), seconds: alertSeconds)
+            if !link.isShowing { unshown.append((lines.first ?? "", body)) }
         }
-        if asNotification, notificationsAllowed {
-            Notifier.shared.post(title: lines.first ?? "", body: lines.dropFirst().joined(separator: ". "))
-        }
+        if asNotification, notificationsAllowed { Notifier.shared.post(title: lines.first ?? "", body: body) }
     }
 
     private func received(_ note: PCNote) {
         guard showPCNotes else { return }
-        let showing = link.isShowing
-        if showing, alertStyle != .notification {
+        if reachable, alertStyle != .notification {
             overlays.push(Reader.note(title: note.title, body: note.body, screen: screen), seconds: max(alertSeconds, 12))
+            if !link.isShowing { unshown.append((note.title, note.body)) }
         }
-        if notificationsAllowed, alertStyle == .notification || alertStyle == .both || !showing {
+        if notificationsAllowed, alertStyle == .notification || alertStyle == .both || !reachable {
             Notifier.shared.post(title: note.title, body: note.body)
         }
     }
@@ -583,7 +626,7 @@ final class HubModel: ObservableObject {
     /// Put a one-off card on the glasses for a few seconds (the "Send" box).
     func flash(_ text: String) {
         let card = Reader.note(title: "", body: text, screen: screen)
-        if link.isShowing { overlays.push(card, seconds: max(alertSeconds, 12)) }
+        if reachable { overlays.push(card, seconds: max(alertSeconds, 12)); if !link.isShowing { unshown.append(("Glasses Hub", text)) } }
         else if notificationsAllowed { Notifier.shared.post(title: "Glasses Hub", body: text) }
     }
 

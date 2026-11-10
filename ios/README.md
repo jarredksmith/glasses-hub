@@ -37,6 +37,13 @@ published measurements.
 
 Scores (per sport), a finished timer and notes from the PC interrupt whatever is showing for a few seconds.
 
+## Pop-up mode
+
+With "Pop up only when something comes in" on, the display stays closed. When a score, a finished timer,
+a PC note or a scheduled fact arrives, the app opens the display, shows it for a few seconds and closes it
+again. The app has to be running in the background for this (it keeps itself awake the same way it does
+with the display on). If the display can't open, the alert goes out as a notification instead.
+
 ## Formatting
 
 - **Tables that line up.** The glasses' ordinary letters vary in width, but double-width characters are

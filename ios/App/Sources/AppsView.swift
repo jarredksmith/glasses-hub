@@ -141,6 +141,10 @@ struct ProgramSettings: View {
             Toggle("Prefer \"on this day\" history", isOn: $model.factsOnThisDay)
             Button("New fact now") { model.nextFact() }
         } footer: { Text("History facts come from Wikipedia; the rest from a random-fact service.") }
+        Section {
+            Stepper(model.popFactMinutes == 0 ? "No fact pop-ups" : "Pop up a fact every \(Int(model.popFactMinutes)) min",
+                    value: $model.popFactMinutes, in: 0...180, step: 5)
+        } footer: { Text("Used in pop-up mode (the switch on the Display tab): a fact appears on the glasses for a few seconds, then the display closes.") }
     }
 
     @ViewBuilder private var timer: some View {
