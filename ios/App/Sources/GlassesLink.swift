@@ -47,10 +47,11 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
 
     // MARK: Controls
 
-    func start(size: TextSize, refresh: Bool) {
+    func start(size: TextSize, refresh: Bool, finishScrollingText: Bool = false) {
         guard state == .off else { return }
         session = CaptionSession(fontSize: size.fontSize, maxLines: size.rows)
         session.refreshInterval = refresh ? 30 : nil
+        session.finishScrollingText = finishScrollingText
         decoder = FrameStreamDecoder()
         rows = size.rows; framesSent = 0
         userStopped = false; wantsStart = true; run += 1

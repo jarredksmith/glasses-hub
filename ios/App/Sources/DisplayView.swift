@@ -15,6 +15,7 @@ struct DisplayView: View {
                     LensPreview(text: model.preview, rows: model.screen.rows, live: link.isShowing, scrolls: model.previewScrolls)
                     programPicker
                     ProgramControls(program: model.program)
+                    PageControls()
                     sendBox
                 }
                 .padding()
@@ -123,7 +124,9 @@ struct ProgramControls: View {
             switch program {
             case .trivia: trivia
             case .timer: timer
-            case .reader: reader
+            case .reader:
+                Text("Long text turns a page every \(Int(model.pageSeconds)) seconds. Edit it under Apps > Reader.").font(.footnote).foregroundStyle(.secondary)
+            case .news: news
             case .facts:
                 Button("New fact now") { model.nextFact() }.buttonStyle(.bordered)
             case .message:
@@ -173,15 +176,39 @@ struct ProgramControls: View {
         .buttonStyle(.bordered)
     }
 
-    @ViewBuilder private var reader: some View {
-        if model.readerParts > 1 {
+    @ViewBuilder private var news: some View {
+        HStack {
+            Button("Previous") { model.newsStep(-1) }
+            Button("Next") { model.newsStep(1) }
+            Spacer()
+            if model.reading == nil {
+                Button("Read story") { model.readCurrent() }.buttonStyle(.borderedProminent).disabled(model.news.isEmpty)
+            } else {
+                Button("Headlines") { model.stopReading() }
+            }
+        }
+        .buttonStyle(.bordered)
+        if let reading = model.reading {
+            Text("Reading: \(reading.title)").font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Shown whenever what's on the glasses runs to more than one screen.
+struct PageControls: View {
+    @EnvironmentObject private var model: HubModel
+
+    var body: some View {
+        if model.pageCount > 1 {
             HStack {
-                Button("Previous part") { model.readerStep(-1) }.disabled(model.readerPart == 0)
-                Text("Part \(model.readerPart + 1) of \(model.readerParts)").font(.footnote)
-                Button("Next part") { model.readerStep(1) }.disabled(model.readerPart >= model.readerParts - 1)
+                Button { model.pageStep(-1) } label: { Image(systemName: "chevron.left") }.disabled(model.pageIndex == 0)
+                Button { model.togglePagesPaused() } label: { Image(systemName: model.pagesPaused ? "play.fill" : "pause.fill") }
+                Button { model.pageStep(1) } label: { Image(systemName: "chevron.right") }.disabled(model.pageIndex >= model.pageCount - 1)
+                Text("Page \(model.pageIndex + 1) of \(model.pageCount)" + (model.pagesPaused ? ", paused" : "")).font(.footnote)
+                Spacer()
+                Button("Start over") { model.pageRestart() }.font(.footnote)
             }
             .buttonStyle(.bordered)
         }
-        Text("Turn the crown to scroll. Edit the text under Apps > Reader.").font(.footnote).foregroundStyle(.secondary)
     }
 }

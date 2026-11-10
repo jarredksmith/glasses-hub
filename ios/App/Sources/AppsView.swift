@@ -42,6 +42,7 @@ struct ProgramSettings: View {
             switch program {
             case .dashboard: dashboard
             case .scores: scores
+            case .news: news
             case .trivia: trivia
             case .facts: facts
             case .timer: timer
@@ -60,6 +61,7 @@ struct ProgramSettings: View {
             Toggle("Score", isOn: $model.dashScores)
             Toggle("Weather", isOn: $model.dashWeather)
             Toggle("Next calendar event", isOn: $model.dashAgenda)
+            Toggle("Top headline", isOn: $model.dashNews)
             TextField("Your own line (optional)", text: $model.dashNote)
         } header: { Text("Lines to include") } footer: {
             Text("The time and date are always on top. A running timer adds its own line. If there are more lines than fit, they take turns.")
@@ -67,6 +69,37 @@ struct ProgramSettings: View {
     }
 
     @ViewBuilder private var scores: some View {
+        Section {
+            Picker("View", selection: $model.scoresView) {
+                ForEach(ScoresView.allCases) { Text($0.title).tag($0) }
+            }
+        } footer: {
+            Text("The box score is a table of points by period. \"All games\" lists every game in your leagues, your teams first.")
+        }
+        Section {
+            Button {
+                model.pinnedGame = ""
+            } label: {
+                HStack { Text("Automatic (my teams first)"); Spacer(); if model.pinnedGame.isEmpty { Image(systemName: "checkmark") } }
+            }
+            ForEach(Scoreboard.ordered(model.games, teams: model.followed).prefix(40)) { game in
+                Button {
+                    model.pinnedGame = game.id
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(game.state == .scheduled ? game.title : game.scoreLine)
+                            Text("\(game.league.short)  \(game.shortStatus(now: Date()))").font(.footnote).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if model.pinnedGame == game.id { Image(systemName: "checkmark") }
+                    }
+                }
+                .foregroundStyle(.primary)
+            }
+        } header: { Text("Game to show") } footer: {
+            Text(model.games.isEmpty ? "Games appear here once the scores load." : "Pick one to keep it on screen, whoever is playing.")
+        }
         Section("Leagues") {
             ForEach(League.allCases) { league in
                 Toggle(league.title, isOn: Binding(
@@ -83,7 +116,7 @@ struct ProgramSettings: View {
         Section {
             Toggle("Interrupt for scores and finals", isOn: $model.scoreAlerts)
         } footer: {
-            Text("Football scores, kickoff and the final take over the screen for a few seconds, whatever else is showing. Scores update every 15 seconds during a game.")
+            Text("Takes over the screen for a few seconds, whatever else is showing: every score in football (and red-zone trips), goals in hockey and soccer, runs in baseball, the end of each period and late lead changes in basketball, plus every start and final. Scores update every 15 seconds during a game.")
         }
     }
 
@@ -121,8 +154,42 @@ struct ProgramSettings: View {
         } footer: { Text("Start and pause from the Display tab. When it ends, the glasses say so, whatever is showing.") }
     }
 
+    @ViewBuilder private var news: some View {
+        Section {
+            ForEach(NewsSource.builtIn) { source in
+                Toggle(source.name, isOn: Binding(
+                    get: { model.newsSources.contains(source.url) },
+                    set: { on in if on { model.newsSources.insert(source.url) } else { model.newsSources.remove(source.url) } }))
+            }
+            TextField("Another feed's address (RSS or Atom)", text: $model.customFeed)
+                .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+        } header: { Text("Sources") }
+        Section {
+            Stepper(model.headlineSeconds == 0 ? "Change headlines when I tap" : "New headline every \(Int(model.headlineSeconds)) seconds",
+                    value: $model.headlineSeconds, in: 0...60, step: 4)
+            Button("Refresh now") { model.refreshNews() }
+        } footer: {
+            Text(model.newsNote.isEmpty ? "Headlines refresh every 10 minutes. Tap one below to read the whole story on your glasses, a page at a time." : model.newsNote)
+        }
+        Section("Headlines") {
+            if model.news.isEmpty { Text("Nothing yet.").foregroundStyle(.secondary) }
+            ForEach(model.news.prefix(30)) { item in
+                Button { model.read(item) } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.title)
+                        Text("\(item.source)  \(News.age(item.date, now: Date()))").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                .foregroundStyle(.primary)
+            }
+        }
+    }
+
     @ViewBuilder private var weather: some View {
         Section {
+            Picker("View", selection: $model.weatherView) {
+                ForEach(WeatherView.allCases) { Text($0.title).tag($0) }
+            }
             TextField("City", text: $model.city).autocorrectionDisabled()
             Toggle("Celsius", isOn: $model.celsius)
         } footer: { Text(model.weatherNote.isEmpty ? "Forecasts come from Open-Meteo and refresh every 20 minutes." : model.weatherNote) }
@@ -130,6 +197,9 @@ struct ProgramSettings: View {
 
     @ViewBuilder private var agenda: some View {
         Section {
+            Picker("View", selection: $model.agendaView) {
+                ForEach(AgendaView.allCases) { Text($0.title).tag($0) }
+            }
             if model.calendarAllowed {
                 Label("Calendar access is on", systemImage: "checkmark.circle").foregroundStyle(.secondary)
             } else {
@@ -146,7 +216,7 @@ struct ProgramSettings: View {
             }
             if !model.readerText.isEmpty { Button("Clear", role: .destructive) { model.readerText = "" } }
         } header: { Text("Text to read") } footer: {
-            Text("Long text goes to the glasses in parts of about a page and a half each; the crown scrolls within a part and the Display tab steps between parts.")
+            Text("Long text is shown a screen at a time and turns by itself. Set the speed under Settings; pause or step pages from the Display tab.")
         }
     }
 

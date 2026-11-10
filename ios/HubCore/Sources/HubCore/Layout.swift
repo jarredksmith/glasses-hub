@@ -59,7 +59,7 @@ public enum TextLayout {
             guard let scalar = ch.unicodeScalars.first else { continue }
             if scalar.value < 32 || scalar.value == 127 { continue }
             // emoji and other picture characters: the glasses' font has no shapes for them
-            if scalar.value >= 0x1F000 || (0x2600...0x27BF).contains(scalar.value) || (0xFE00...0xFE0F).contains(scalar.value) { continue }
+            if scalar.value >= 0x1F000 || ((0x2600...0x27BF).contains(scalar.value) && scalar.value != 0x2605 && scalar.value != 0x2606) || (0xFE00...0xFE0F).contains(scalar.value) { continue }
             append(ch, to: &out, lastWasSpace: &lastWasSpace)
         }
         while out.last == " " { out.removeLast() }

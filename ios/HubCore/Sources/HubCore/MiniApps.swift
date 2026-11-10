@@ -157,13 +157,14 @@ public struct HubTimer: Equatable, Codable {
         let s = max(0, Int(seconds.rounded(.up)))
         return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60) : String(format: "%02d:%02d", s / 60, s % 60)
     }
-    public func card(screen: Screen, now: Date) -> Card {
+    public func card(screen: Screen, now: Date, glyphs: Glyphs = .plain) -> Card {
         let left = remaining(now: now)
         let state = isDone(now: now) ? "TIME'S UP" : (isRunning ? label : "\(label) (paused)")
         let fraction = duration > 0 ? left / duration : 0
         return Card([TextLayout.fit(state, width: screen.columns),
                      TextLayout.headline(HubTimer.clock(left), screen: screen),
-                     TextLayout.bar(fraction, cells: 16) + " \(Int((fraction * 100).rounded()))%"])
+                     glyphs.style == .plain ? TextLayout.bar(fraction, cells: 16) + " \(Int((fraction * 100).rounded()))%"
+                                            : glyphs.meter(fraction, cells: min(12, screen.wideColumns - 4)) + " \(Int((fraction * 100).rounded()))%"])
     }
 }
 
@@ -179,6 +180,11 @@ public struct Weather: Equatable {
     public var low: Int?
     public var rainChance: Int?
     public var tomorrow: String?
+    public struct Hour: Equatable { public var label: String; public var temperature: Int; public var rain: Int; public var code: Int }
+    public struct Day: Equatable { public var label: String; public var high: Int; public var low: Int; public var rain: Int; public var code: Int }
+    public var code = -1
+    public var hours: [Hour] = []
+    public var days: [Day] = []
 
     public static func placeLookup(_ name: String) -> URL? {
         var parts = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")
@@ -201,7 +207,9 @@ public struct Weather: Equatable {
             URLQueryItem(name: "daily", value: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"),
             URLQueryItem(name: "temperature_unit", value: celsius ? "celsius" : "fahrenheit"),
             URLQueryItem(name: "wind_speed_unit", value: celsius ? "kmh" : "mph"),
-            URLQueryItem(name: "timezone", value: "auto"), URLQueryItem(name: "forecast_days", value: "2"),
+            URLQueryItem(name: "hourly", value: "temperature_2m,precipitation_probability,weather_code"),
+            URLQueryItem(name: "forecast_hours", value: "14"),
+            URLQueryItem(name: "timezone", value: "auto"), URLQueryItem(name: "forecast_days", value: "6"),
         ]
         return parts.url!
     }
@@ -223,6 +231,30 @@ public struct Weather: Equatable {
         if let hi = whole(item("temperature_2m_max", 1)), let lo = whole(item("temperature_2m_min", 1)) {
             weather.tomorrow = "Tomorrow \(hi)/\(lo) \(describe(Envelope.int(item("weather_code", 1)) ?? -1))"
         }
+        weather.code = Envelope.int(current["weather_code"]) ?? -1
+        let stamp = DateFormatter(); stamp.locale = Locale(identifier: "en_US_POSIX"); stamp.timeZone = TimeZone(identifier: "UTC")
+        if let hourly = root["hourly"] as? [String: Any], let times = hourly["time"] as? [String] {
+            stamp.dateFormat = "yyyy-MM-dd'T'HH:mm"
+            let hourName = DateFormatter(); hourName.locale = stamp.locale; hourName.timeZone = stamp.timeZone; hourName.dateFormat = "ha"
+            for (i, time) in times.enumerated() {
+                guard let t = whole((hourly["temperature_2m"] as? [Any])?[safe: i]), let date = stamp.date(from: time) else { continue }
+                let label = hourName.string(from: date).lowercased().replacingOccurrences(of: "m", with: "")
+                weather.hours.append(Hour(label: label, temperature: t,
+                                          rain: Envelope.int((hourly["precipitation_probability"] as? [Any])?[safe: i]) ?? 0,
+                                          code: Envelope.int((hourly["weather_code"] as? [Any])?[safe: i]) ?? -1))
+            }
+        }
+        if let daily = root["daily"] as? [String: Any], let times = daily["time"] as? [String] {
+            stamp.dateFormat = "yyyy-MM-dd"
+            let dayName = DateFormatter(); dayName.locale = stamp.locale; dayName.timeZone = stamp.timeZone; dayName.dateFormat = "EEE"
+            for (i, time) in times.enumerated() {
+                guard let hi = whole(item("temperature_2m_max", i)), let lo = whole(item("temperature_2m_min", i)),
+                      let date = stamp.date(from: time) else { continue }
+                weather.days.append(Day(label: i == 0 ? "Today" : dayName.string(from: date), high: hi, low: lo,
+                                        rain: Envelope.int(item("precipitation_probability_max", i)) ?? 0,
+                                        code: Envelope.int(item("weather_code", i)) ?? -1))
+            }
+        }
         return weather
     }
     /// WMO weather codes, as Open-Meteo reports them.
@@ -237,6 +269,35 @@ public struct Weather: Equatable {
         case 96, 99: return "Storm with hail"; default: return "Weather"
         }
     }
+    /// The next half day as a table: a column every three hours with temperature, sky and chance of rain.
+    public func hoursCard(screen: Screen, glyphs: Glyphs = .plain) -> Card? {
+        let columns = min(screen.wideColumns / 4, 6)
+        let picked = stride(from: 0, to: hours.count, by: 3).prefix(columns).map { hours[$0] }
+        guard picked.count >= 3 else { return nil }
+        var lines = [TextLayout.fit("\(place)  \(temperature)° \(condition)", width: screen.columns)]
+        lines.append(Grid.row(picked.enumerated().map { ($0.offset == 0 ? "Now" : $0.element.label, 4, false) }))
+        lines.append(Grid.row(picked.map { ("\($0.temperature)", 4, false) }))
+        lines.append(picked.map { glyphs.weather($0.code) + String(repeating: glyphs.blank, count: 3) }.joined().trimmingCharacters(in: CharacterSet(charactersIn: glyphs.blank)))
+        if picked.contains(where: { $0.rain >= 20 }) {
+            lines.append(Grid.row(picked.map { ($0.rain >= 100 ? "99" : "\($0.rain)", 4, false) }) + " %rain")
+        } else if let line = glyphs.spark(hours.map { Double($0.temperature) }) { lines.append(line + " temp") }
+        else { lines.append("No rain expected") }
+        if lines.count < screen.rows { lines.append(TextLayout.fit(glyphs.weatherLegend, width: screen.columns)) }
+        return Card(Array(lines.prefix(screen.rows)))
+    }
+
+    /// The days ahead, one per row: day, sky, high and low, chance of rain.
+    public func weekCard(screen: Screen, glyphs: Glyphs = .plain) -> Card? {
+        guard days.count >= 2 else { return nil }
+        var lines = [TextLayout.fit("\(place)  now \(temperature)°", width: screen.columns)]
+        for day in days.prefix(screen.rows - 1) {
+            let name = day.label == "Today" ? "Now" : day.label
+            let rain = day.rain >= 30 ? glyphs.blank + glyphs.weather(61) + (day.rain >= 100 ? "99" : "\(day.rain)") : ""
+            lines.append(Grid.row([(name, 4, false), (glyphs.weather(day.code), 2, false), ("\(day.high)", 2, true), ("/", 1, false), ("\(day.low)", 2, false)]) + rain)
+        }
+        return Card(lines)
+    }
+
     public var summary: String { "\(temperature)° \(condition)" + (rainChance.map { $0 >= 30 ? ", rain \($0)%" : "" } ?? "") }
     public func card(screen: Screen) -> Card {
         var lines = [TextLayout.fit(place.isEmpty ? "Weather" : place, width: screen.columns),
@@ -246,6 +307,10 @@ public struct Weather: Equatable {
         if let tomorrow { lines.append(TextLayout.fit(tomorrow, width: screen.columns)) }
         return Card(Array(lines.prefix(screen.rows)))
     }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }
 
 // MARK: - Calendar
@@ -289,6 +354,103 @@ public enum Agenda {
         for item in list { lines.append(TextLayout.fit(line(item, now: now), width: screen.columns)) }
         return Card(lines, scrolls: lines.count > screen.rows)
     }
+}
+
+extension Agenda {
+    /// A month calendar: weekday letters over rows of dates, today marked. On the 5-line screen it shows
+    /// the weeks around today. Days with events can carry a dot when the style allows.
+    public static func monthCard(now: Date, screen: Screen, glyphs: Glyphs = .plain, busyDays: Set<Int> = [],
+                                 calendar base: Calendar = .current) -> Card {
+        var calendar = base
+        calendar.firstWeekday = 1
+        let today = calendar.component(.day, from: now)
+        guard let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now)),
+              let dayCount = calendar.range(of: .day, in: .month, for: now)?.count else { return Card(["Calendar"]) }
+        let lead = calendar.component(.weekday, from: monthStart) - 1
+        var weeks = [[Int?]]()
+        var week = [Int?](repeating: nil, count: lead)
+        for day in 1...dayCount {
+            week.append(day)
+            if week.count == 7 { weeks.append(week); week = [] }
+        }
+        if !week.isEmpty { weeks.append(week + [Int?](repeating: nil, count: 7 - week.count)) }
+        let title = DateFormatter(); title.locale = Locale(identifier: "en_US_POSIX"); title.timeZone = calendar.timeZone
+        title.dateFormat = "MMMM yyyy"
+        var room = screen.rows - 2                                   // title and weekday rows
+        var showTitle = true
+        if weeks.count > room, weeks.count <= screen.rows - 1 { showTitle = false; room = screen.rows - 1 }
+        if weeks.count > room {
+            let current = weeks.firstIndex { $0.contains(today) } ?? 0
+            let start = max(0, min(weeks.count - room, current - room / 2))
+            weeks = Array(weeks[start..<(start + room)])
+        }
+        var lines = showTitle ? [title.string(from: now)] : []
+        lines.append(["S", "M", "T", "W", "T", "F", "S"].map { TextLayout.wide($0) + glyphs.blank }.joined().trimmingCharacters(in: CharacterSet(charactersIn: glyphs.blank)))
+        for row in weeks {
+            var line = ""
+            for day in row {
+                guard let day else { line += glyphs.blank + glyphs.blank; continue }
+                let mark = day == today ? glyphs.here : (busyDays.contains(day) && glyphs.style != .plain ? "·" : glyphs.blank)
+                line += Grid.cell(String(day), 1, right: true) + mark
+            }
+            while line.last == Grid.space { line.removeLast() }
+            lines.append(line)
+        }
+        return Card(lines)
+    }
+
+    /// Today's events with markers: what's on now, what's next, what's later.
+    public static func listCard(_ items: [AgendaItem], screen: Screen, now: Date, glyphs: Glyphs) -> Card {
+        guard glyphs.style != .plain else { return card(items, screen: screen, now: now) }
+        let list = upcoming(items, now: now)
+        guard !list.isEmpty else { return Card(["Calendar, \(HubClock.day(now))", "Nothing else today."]) }
+        var lines = ["Calendar, \(HubClock.day(now))"]
+        var markedNext = false
+        for item in list {
+            let mark: String
+            if item.allDay { mark = glyphs.hollow }
+            else if item.start <= now { mark = glyphs.live }
+            else if !markedNext { mark = glyphs.next; markedNext = true }
+            else { mark = glyphs.hollow }
+            var text = item.allDay ? item.title : (item.start <= now ? "Now: \(item.title)" : "\(HubClock.time(item.start)) \(item.title)")
+            if mark == glyphs.next { text += " (\(HubClock.until(item.start, from: now)))" }
+            lines.append(mark + " " + TextLayout.fit(text, width: screen.columns - 3))
+        }
+        return Card(lines, scrolls: lines.count > screen.rows)
+    }
+}
+
+/// Turns a card that's taller than the screen into pages that turn by themselves. The glasses' own
+/// crown scrolling can't be relied on for reading: the caption page jumps back to the end of the text
+/// a few seconds after you scroll.
+public struct AutoPager: Equatable {
+    public private(set) var index = 0
+    public private(set) var count = 1
+    public var paused = false
+    private var key = ""
+    private var turnedAt: TimeInterval = 0
+
+    public init() {}
+
+    /// The page to show now. `loops` starts over after the last page; otherwise it stays there.
+    public mutating func page(of card: Card, rows: Int, now: TimeInterval, seconds: TimeInterval, loops: Bool) -> Card {
+        guard card.lines.count > rows else { count = 1; index = 0; key = ""; return Card(card.lines) }
+        let pages = TextLayout.pages(card.lines, rows: rows)
+        let newKey = card.lines.joined(separator: "\n")
+        if newKey != key { key = newKey; index = 0; turnedAt = now }
+        count = pages.count
+        index = min(index, count - 1)
+        if !paused, seconds > 0, now - turnedAt >= seconds {
+            if index + 1 < count { index += 1; turnedAt = now }
+            else if loops { index = 0; turnedAt = now }
+        }
+        return Card(pages[index])
+    }
+
+    public mutating func step(_ by: Int, now: TimeInterval) {
+        index = max(0, min(count - 1, index + by)); turnedAt = now
+    }
+    public mutating func restart(now: TimeInterval) { index = 0; turnedAt = now }
 }
 
 // MARK: - Reader and messages

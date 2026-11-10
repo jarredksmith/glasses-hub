@@ -115,6 +115,24 @@ enum Feeds {
         return anyWorked ? all : nil
     }
 
+    static func nextGame(team: String, league: League) async -> Game? {
+        guard let url = league.teamFeed(team), let data = await data(url) else { return nil }
+        return Scoreboard.parseTeamNext(data, league: league)
+    }
+
+    static func news(_ source: NewsSource) async -> [NewsItem] {
+        guard let url = URL(string: source.url), let data = await data(url) else { return [] }
+        return News.parseFeed(data, source: source.name)
+    }
+
+    /// The readable text of a story's page, or "" if it can't be had.
+    static func article(_ url: URL) async -> String {
+        guard let data = await data(url), data.count < 4_000_000 else { return "" }
+        let html = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
+        let text = News.articleText(html: html)
+        return text.utf8.count > 60_000 ? String(text.prefix(60_000)) : text
+    }
+
     static func trivia(count: Int) async -> [TriviaQuestion] {
         guard let data = await data(Trivia.feed(count: count)) else { return [] }
         return Trivia.parse(data)

@@ -36,6 +36,8 @@ public struct CaptionSession {
     public var minInterval: TimeInterval = 1.0
     /// Re-send an unchanged screen this often so the page doesn't go stale. Nil turns that off.
     public var refreshInterval: TimeInterval? = 30
+    /// Experiment: send text meant for crown scrolling as "finished" (see CaptionWire.text).
+    public var finishScrollingText = false
 
     private var sequence: UInt16
     private var busy: BusyWrite?
@@ -145,7 +147,7 @@ public struct CaptionSession {
             return [.log("Skipped a screen that was too long to send.")]
         }
         busy = .text; busySince = now; lastTextAt = now; lastSentFrame = wanted; framesSent += 1
-        return [.write(packet(CaptionWire.text(sid: sid, frame: wanted)), text: true)]
+        return [.write(packet(CaptionWire.text(sid: sid, frame: wanted, finished: wantedScrolls && finishScrollingText)), text: true)]
     }
 
     /// Close this session's page. Safe to call at any point.

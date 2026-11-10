@@ -12,7 +12,7 @@ RayNeo app already holds; iOS lets apps share one.
 - **Needs:** the RayNeo app connected to your glasses. Stock firmware. Nothing is installed on the glasses.
 - **Doesn't do:** pairing, the RayNeo sign-in handshake, settings changes, or taking the screen from
   something else that's open. It only ever closes the page it opened.
-- **On the glasses:** turn the crown to scroll long text. Hold the crown to leave.
+- **On the glasses:** hold the crown to leave.
 - **Fallback:** when the display is off, alerts go out as ordinary notifications, which the RayNeo app
   mirrors to the glasses.
 
@@ -24,17 +24,30 @@ published measurements.
 
 | App | What the glasses show |
 |---|---|
-| Dashboard | Time and date, plus a line each for your team's score, the weather and your next event |
-| Scoreboard | Live score, clock, down and distance, last play. NFL, NBA, MLB, NHL, college football and basketball |
+| Dashboard | Time and date, plus a line each for your team's score, the weather, your next event and the top headline |
+| Scoreboard | One game (score, clock, who has the ball, last play), its box score as a table by period, or every game in your leagues as a table. NFL, college football, NBA, WNBA, college basketball, MLB, NHL, MLS, Premier League |
+| News | Headlines from feeds you pick, turning by themselves; any story in full, a page at a time |
 | Trivia host | The question, then the answer, on timers or when you tap |
 | Odd facts | A new fact every few minutes |
 | Timer | A countdown with a progress bar |
-| Weather | Now, today and tomorrow for a city you pick |
-| Calendar | What's left on today's calendar |
-| Reader | Any text you paste, scrolled with the crown |
+| Weather | Now; the next 12 hours as a table; the week ahead |
+| Calendar | Today's events with now/next markers, or the month as a grid with today marked |
+| Reader | Any text you paste, a page at a time |
 | Message | A line of text that stays up |
 
-Scores, a finished timer and notes from the PC interrupt whatever is showing for a few seconds.
+Scores (per sport), a finished timer and notes from the PC interrupt whatever is showing for a few seconds.
+
+## Formatting
+
+- **Tables that line up.** The glasses' ordinary letters vary in width, but double-width characters are
+  all one size and two ordinary digits fill one of them. `Grid` builds every table from those.
+- **Symbols.** Dots, stars, arrows, squares and box lines from the old GB2312 set, which a Chinese-market
+  display font should carry. Settings has three levels (plain, symbols, symbols plus shaded bars) and a
+  test that puts every character used on the glasses.
+- **Pages, not scrolling.** The caption page jumps back to the end of scrolled text after a few seconds,
+  so anything taller than the screen is split into pages that turn on a timer, with pause and step
+  buttons on the phone. Sending long text marked "finished" so the crown can scroll it is an experiment
+  behind a switch.
 
 ## The PC
 

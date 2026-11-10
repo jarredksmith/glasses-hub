@@ -23,6 +23,22 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker("Characters", selection: $model.glyphStyle) {
+                        ForEach(GlyphStyle.allCases) { Text($0.title).tag($0) }
+                    }
+                    Button("Show the symbol test (3 screens)") { model.showSymbolTest() }
+                } header: { Text("Look") } footer: {
+                    Text("Symbols add dots, stars, arrows and table lines to scores, weather, the calendar and news. Run the test with the display on: if any character shows as an empty box or a gap, tell me which, or drop down a level. Shaded bars are the least certain.")
+                }
+
+                Section {
+                    Stepper("Turn the page every \(Int(model.pageSeconds)) seconds", value: $model.pageSeconds, in: 4...60, step: 2)
+                    Toggle("Let the crown scroll long text instead (experimental)", isOn: $model.crownScroll)
+                } header: { Text("Long text") } footer: {
+                    Text("Anything taller than the screen is split into pages that turn by themselves, because the glasses jump back to the end of scrolled text after a few seconds. The experiment sends reader and news text in one piece, marked as finished, which may stop that jump. It applies the next time the display starts.")
+                }
+
+                Section {
                     Toggle("Keep running when the phone is locked", isOn: $model.runWhenLocked)
                     Toggle("Re-send the screen every 30 seconds", isOn: $model.refreshScreen)
                 } header: { Text("While the display is on") } footer: {

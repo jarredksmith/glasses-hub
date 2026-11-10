@@ -71,9 +71,10 @@ final class ScoreboardTests: XCTestCase {
         XCTAssertEqual(g.start, ISO8601DateFormatter().date(from: "2026-11-15T18:00:00Z"))
         let card = Scoreboard.card(g, screen: Screen(size: .large), now: now)
         XCTAssertEqual(card.lines[0], "NFL 4:12 - 3rd")
-        XCTAssertEqual(card.lines[1], TextLayout.wide("KC 24 - BUF 17"))
-        XCTAssertEqual(card.lines[2], "KC ball: 2nd & 7 at KC 43")
-        XCTAssertTrue(card.lines[3].hasPrefix("Last: Travis Kelce 12-yd pass"))
+        XCTAssertEqual(card.lines[1], "ＫＣ\u{3000}\u{3000}\u{3000}\u{3000}24\u{3000}＜")       // KC has the ball
+        XCTAssertEqual(card.lines[2], "ＢＵＦ\u{3000}\u{3000}\u{3000}17")
+        XCTAssertEqual(card.lines[3], "2nd & 7 at KC 43")
+        XCTAssertTrue(card.lines[4].hasPrefix("Last: Travis Kelce 12-yd pass"))
         XCTAssertLessThanOrEqual(card.lines.count, 5)
         XCTAssertEqual(Scoreboard.pollInterval(g, now: now), 15)
     }

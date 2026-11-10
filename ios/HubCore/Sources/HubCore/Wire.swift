@@ -197,9 +197,11 @@ public enum CaptionWire {
     }
 
     /// `status` 0 marks the text as still changing, which is what makes the next one replace it in place.
-    public static func text(sid: String, frame: String) -> Data {
+    /// `finished` marks it as done instead, an experiment for long text: the page may then stop jumping
+    /// back to the end while the wearer scrolls.
+    public static func text(sid: String, frame: String, finished: Bool = false) -> Data {
         Envelope.encode(type: textType, json: [
-            "sid": sid, "mode": 3, "status": 0, "content": ["source_transcript": frame],
+            "sid": sid, "mode": 3, "status": finished ? 1 : 0, "content": ["source_transcript": frame],
         ])
     }
 
