@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged with the keys Xcode generates from the INFOPLIST_KEY_* settings in project.yml. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<!-- bluetooth-central: keep talking to the glasses from the background.
+	     audio: lets the silent keep-awake loop run while the phone is locked. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+		<string>audio</string>
+	</array>
+</dict>
+</plist>
