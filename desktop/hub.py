@@ -14,7 +14,7 @@ import tkinter as tk
 import webbrowser
 from datetime import datetime
 from tkinter import font as tkfont
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -195,6 +195,9 @@ def main():
         for d in devs.values():
             if d.get("sub"):
                 how = "notifications on (works with the app closed)"
+            elif (d.get("apns") or {}).get("token"):
+                how = ("iPhone app (works with the app closed)" if hub.apns_ready
+                       else "iPhone app (add the Apple push key in Settings to reach it when closed)")
             else:
                 how = "relay only (keep the app open)"
             if d.get("last_error"):
@@ -423,6 +426,45 @@ def main():
     mrow.pack(fill="x", padx=10, pady=(0, 10))
     label(mrow, "Model").pack(side="left")
     entry(mrow, m_var, 24).pack(side="left", padx=6)
+
+    pc2 = tk.Frame(gtab, bg=C["panel"], highlightthickness=1, highlightbackground=C["line"])
+    pc2.pack(fill="x", pady=(0, 8))
+    label(pc2, "iPhone app (Apple push)", font="head").pack(fill="x", padx=10, pady=(8, 2))
+    apns_state = tk.StringVar()
+
+    def render_apns():
+        apns_state.set(f"Key {hub.cfg['apns_key_id']} saved. Notes reach the iPhone app even when it's closed."
+                       if hub.apns_ready else
+                       "No key yet. Without one, the iPhone app only gets notes while it's running. "
+                       "Choose the AuthKey_XXXXXXXXXX.p8 file from your Apple Developer account.")
+    render_apns()
+    label(pc2, var=apns_state, color="muted", font="small", wraplength=460).pack(fill="x", padx=10)
+    arow2 = tk.Frame(pc2, bg=C["panel"])
+    arow2.pack(fill="x", padx=10, pady=(4, 10))
+    label(arow2, "Key ID").pack(side="left")
+    kid_var = tk.StringVar(value=hub.cfg.get("apns_key_id", ""))
+    entry(arow2, kid_var, 12).pack(side="left", padx=6)
+
+    def choose_apns():
+        path = filedialog.askopenfilename(title="Choose your Apple push key", initialdir=os.path.expanduser("~/Downloads"),
+                                          filetypes=[("Apple key", "*.p8"), ("All files", "*.*")])
+        if not path:
+            return
+        name = os.path.basename(path)
+        if name.startswith("AuthKey_") and name.endswith(".p8"):
+            kid_var.set(name[8:-3])                  # the Key ID is in the file name
+        try:
+            hub.set_apns_key(path, kid_var.get())
+        except (ValueError, OSError) as e:
+            messagebox.showerror(APP_TITLE, str(e))
+        render_apns()
+    button(arow2, "Choose key file…", choose_apns).pack(side="left")
+
+    def remove_apns():
+        hub.clear_apns_key()
+        kid_var.set("")
+        render_apns()
+    button(arow2, "Remove", remove_apns).pack(side="left", padx=6)
 
     oc = tk.Frame(gtab, bg=C["panel"], highlightthickness=1, highlightbackground=C["line"])
     oc.pack(fill="x")

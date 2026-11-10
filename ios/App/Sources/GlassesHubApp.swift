@@ -1,7 +1,30 @@
 import SwiftUI
 
+/// Collects the address Apple gives this app for push notifications. The PC link passes it to the PC.
+final class PushDelegate: NSObject, UIApplicationDelegate {
+    static let tokenKey = "push.token"
+    static let changed = Notification.Name("GlassesHubPushTokenChanged")
+
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        application.registerForRemoteNotifications()        // gets the address; showing alerts is a separate permission
+        return true
+    }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+        guard token != UserDefaults.standard.string(forKey: PushDelegate.tokenKey) else { return }
+        UserDefaults.standard.set(token, forKey: PushDelegate.tokenKey)
+        NotificationCenter.default.post(name: PushDelegate.changed, object: nil)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        UserDefaults.standard.set(error.localizedDescription, forKey: "push.error")
+    }
+}
+
 @main
 struct GlassesHubApp: App {
+    @UIApplicationDelegateAdaptor(PushDelegate.self) private var pushDelegate
     @StateObject private var model = HubModel()
     @Environment(\.scenePhase) private var phase
 

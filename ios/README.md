@@ -41,8 +41,12 @@ Scores, a finished timer and notes from the PC interrupt whatever is showing for
 The PC tab pairs with Glasses Hub for Windows using the same code as the web app. The PC's notes then
 show up as cards on the glasses, and its plug-ins can be switched and run from the phone.
 
-Notes arrive while the app is running: in front, or in the background with the display on. They don't
-arrive while the app is closed. The Home Screen web app still does that, by web push.
+While the app is running (in front, or in the background with the display on) notes come over the relay
+and show on the glasses' display. When it isn't, the PC sends them by Apple push and they arrive as
+notifications. The app tells the PC which case applies every 45 seconds.
+
+Apple push needs a key on the PC: an "Apple Push Notifications service" key (.p8) from the Apple Developer
+account, chosen once under Settings in the PC app. Without it, notes only arrive while the app is running.
 
 ## Code
 

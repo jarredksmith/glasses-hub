@@ -27,7 +27,7 @@ struct PCView: View {
             .disabled(pairing || !pc.hasCode)
             if !pc.message.isEmpty { Text(pc.message).font(.footnote).foregroundStyle(.secondary) }
         } header: { Text("Pairing code") } footer: {
-            Text("Open Glasses Hub on your PC and type the code it shows. Notes from the PC's plug-ins and your own scripts then show up on the glasses as cards.\n\nThey arrive while this app is open, or in the background with the display on. To get them with the app fully closed, keep using the Home Screen web app for now.")
+            Text("Open Glasses Hub on your PC and type the code it shows. Notes from the PC's plug-ins and your own scripts then show up on the glasses as cards.\n\nWhile this app is running, notes show on the glasses' display. When it's closed, they arrive as notifications, once the PC has its Apple push key (PC app > Settings).")
         }
     }
 
@@ -37,6 +37,9 @@ struct PCView: View {
                 Circle().fill(pc.connected ? Color.green : Color.orange).frame(width: 10, height: 10)
                 Text(pc.connected ? "Connected to \(pc.pcName.isEmpty ? "your PC" : pc.pcName)" : "Reconnecting…")
             }
+            Label(pc.reachesWhenClosed ? "Notes also arrive when this app is closed" : "Notes arrive only while this app is running. Add the Apple push key on the PC to fix that.",
+                  systemImage: pc.reachesWhenClosed ? "checkmark.circle" : "exclamationmark.circle")
+                .font(.footnote).foregroundStyle(.secondary)
             Toggle("Show the PC's notes on the glasses", isOn: $model.showPCNotes)
             Button("Send a test from the PC") { pc.sendTest() }
             if pc.quietHours { Text("Quiet hours are on at your PC: only things you ask for come through.").font(.footnote).foregroundStyle(.secondary) }

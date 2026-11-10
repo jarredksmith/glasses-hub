@@ -7,6 +7,9 @@
 	<false/>
 	<!-- bluetooth-central: keep talking to the glasses from the background.
 	     audio: lets the silent keep-awake loop run while the phone is locked. -->
+	<!-- The developer team that signed the app. The PC needs it to address Apple push. -->
+	<key>HubTeamID</key>
+	<string>$(DEVELOPMENT_TEAM)</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

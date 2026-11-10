@@ -197,6 +197,7 @@ final class HubModel: ObservableObject {
         link.stop()
         overlays.clear()
         applyKeepAwake()
+        if !inFront { pc.pause() }
     }
 
     func scene(active: Bool) {
@@ -218,6 +219,7 @@ final class HubModel: ObservableObject {
         overlays.clear()
         applyKeepAwake()
         endedNotice = reason
+        if !inFront { pc.pause() }          // nothing keeps the app awake now; let the PC switch to Apple push
         if !inFront { Notifier.shared.post(title: "Glasses display stopped", body: reason) }
     }
 

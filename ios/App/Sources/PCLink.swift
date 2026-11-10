@@ -30,6 +30,8 @@ final class PCLink: ObservableObject {
     @Published private(set) var pcName: String
     @Published private(set) var plugins: [PCPlugin] = []
     @Published private(set) var quietHours = false
+    /// True when the PC has an Apple push key and this app's address, so notes arrive even when it's closed.
+    @Published private(set) var reachesWhenClosed = false
     @Published private(set) var message = ""
     @Published private(set) var notes: [PCNote] = []
     @Published var code: String
@@ -40,6 +42,8 @@ final class PCLink: ObservableObject {
     private let relay = "https://ntfy.sh"
     private var keys: PairingKeys?
     private var listener: Task<Void, Never>?
+    private var heartbeat: Task<Void, Never>?
+    private var tokenObserver: NSObjectProtocol?
     private var seen = Set<String>()
     private let deviceID: String
 
@@ -51,6 +55,12 @@ final class PCLink: ObservableObject {
         else {
             deviceID = (0..<9).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
             defaults.set(deviceID, forKey: "pc.device")
+        }
+        tokenObserver = NotificationCenter.default.addObserver(forName: PushDelegate.changed, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.keys != nil else { return }
+                await self.send("hello", self.helloFields)        // tell the PC the new push address
+            }
         }
         if let data = defaults.data(forKey: "pc.notes"), let saved = try? JSONDecoder().decode([PCNote].self, from: data) { notes = saved }
     }
@@ -79,8 +89,8 @@ final class PCLink: ObservableObject {
 
     func forget() {
         Task { await send("forget") }
-        listener?.cancel(); listener = nil
-        keys = nil; connected = false; paired = false; pcName = ""; plugins = []; code = ""
+        stopListening()
+        keys = nil; paired = false; pcName = ""; plugins = []; code = ""; reachesWhenClosed = false
         for key in ["pc.code", "pc.paired", "pc.name"] { defaults.removeObject(forKey: key) }
     }
 
@@ -92,8 +102,17 @@ final class PCLink: ObservableObject {
         Task { await send("hello", helloFields) }
     }
 
+    /// The app is about to stop running in the background. Tell the PC, so it switches to Apple push.
     func pause() {
-        listener?.cancel(); listener = nil; connected = false
+        guard listener != nil else { return }
+        stopListening()
+        Task { await send("live", ["on": false]) }
+    }
+
+    private func stopListening() {
+        listener?.cancel(); listener = nil
+        heartbeat?.cancel(); heartbeat = nil
+        connected = false
     }
 
     func toggle(_ plugin: PCPlugin, on: Bool) { Task { await send("toggle", ["plugin": plugin.id, "on": on]) } }
@@ -104,7 +123,14 @@ final class PCLink: ObservableObject {
 
     private var helloFields: [String: Any] {
         // Wide limits: the PC sends each note whole and this app lays it out for the glasses itself.
-        ["name": UIDevice.current.name + " (app)", "widths": ["title": 120, "body": 1500], "hasPush": false]
+        var fields: [String: Any] = ["name": UIDevice.current.name + " (app)", "widths": ["title": 120, "body": 1500],
+                                     "hasPush": false, "live": listener != nil]
+        if let token = defaults.string(forKey: PushDelegate.tokenKey),
+           let team = Bundle.main.object(forInfoDictionaryKey: "HubTeamID") as? String, !team.isEmpty,
+           let topic = Bundle.main.bundleIdentifier {
+            fields["apns"] = ["token": token, "team": team, "topic": topic]
+        }
+        return fields
     }
 
     // MARK: Relay
@@ -127,9 +153,18 @@ final class PCLink: ObservableObject {
     }
 
     private func startListening() {
-        listener?.cancel()
+        stopListening()
         guard let keys else { return }
         let channel = keys.down
+        // While this app is running it takes notes over the relay and shows them itself. The PC is told
+        // every 45 seconds; when the word stops coming, it falls back to Apple push.
+        heartbeat = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 45_000_000_000)
+                guard !Task.isCancelled, let self else { return }
+                await self.send("live", ["on": true])
+            }
+        }
         listener = Task { @MainActor [weak self] in
             var since = String(Int(Date().timeIntervalSince1970))
             var wait: UInt64 = 2
@@ -165,6 +200,7 @@ final class PCLink: ObservableObject {
         case "welcome", "status":
             if let name = message["pc"] as? String { pcName = name; defaults.set(name, forKey: "pc.name") }
             quietHours = message["quiet"] as? Bool ?? false
+            reachesWhenClosed = message["apns"] as? Bool ?? false
             plugins = (message["plugins"] as? [[String: Any]] ?? []).compactMap { p in
                 guard let id = p["id"] as? String else { return nil }
                 let actions = (p["actions"] as? [[String: Any]] ?? []).compactMap { a -> PCPlugin.Button? in

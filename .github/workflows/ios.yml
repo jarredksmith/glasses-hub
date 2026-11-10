@@ -85,11 +85,21 @@ jobs:
           grep -E "error:" "$RUNNER_TEMP/build.log" | sort -u | head -n 30 | while IFS= read -r line; do echo "::error::${line}"; done
           exit $STATUS
 
-      - name: Give the archive an ad-hoc signature
+      - name: Stamp the entitlements onto the archive
         if: env.SIGNING == 'true'
         run: |
-          # Built unsigned (no certificate on the runner); export re-signs with the distribution certificate.
-          codesign --force --sign - "$RUNNER_TEMP/GlassesHub.xcarchive/Products/Applications/GlassesHub.app"
+          # Built unsigned (no certificate on the runner), so the app carries no entitlements yet. Export
+          # reads them from the app's existing signature, so give it an ad-hoc one that includes Apple push.
+          APP="$RUNNER_TEMP/GlassesHub.xcarchive/Products/Applications/GlassesHub.app"
+          cat > "$RUNNER_TEMP/app.entitlements" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>aps-environment</key><string>production</string>
+          </dict></plist>
+          PLIST
+          codesign --force --sign - --entitlements "$RUNNER_TEMP/app.entitlements" "$APP"
+          codesign -d --entitlements :- "$APP" 2>/dev/null | head -n 20
 
       - name: Sign and upload to TestFlight
         if: env.SIGNING == 'true'
@@ -118,6 +128,7 @@ jobs:
           STATUS=$?
           tail -n 60 "$RUNNER_TEMP/export.log"
           grep -iE "error" "$RUNNER_TEMP/export.log" | sort -u | head -n 15 | while IFS= read -r line; do echo "::error::${line}"; done
+          grep -iE "aps-environment|entitlement" "$RUNNER_TEMP/export.log" | head -n 5
           [ $STATUS -eq 0 ] && echo "::notice::Build ${{ github.run_number }} uploaded. It shows up in TestFlight after Apple finishes processing (usually 5 to 15 minutes)."
           exit $STATUS
 

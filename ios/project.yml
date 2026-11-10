@@ -30,6 +30,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/GlassesHub.entitlements
         INFOPLIST_KEY_CFBundleDisplayName: Glasses Hub
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES

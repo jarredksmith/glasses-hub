@@ -23,6 +23,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+import apns
 import webpush
 
 log = logging.getLogger("glasseshub")
@@ -262,6 +263,10 @@ DEFAULTS = {
     "send_port": 8770,
     "send_key": "",
     "plugins": {},
+    # Apple push for the iPhone app: the .p8 key's text and its Key ID. The app reports its own team and
+    # bundle ID when it pairs.
+    "apns_pem": "",
+    "apns_key_id": "",
 }
 
 
@@ -373,6 +378,55 @@ class Hub:
             except Exception:
                 pass
 
+    # ---------------------------------------------------------- Apple push (iPhone app)
+    LIVE_SECONDS = 130          # the app says "I'm listening" every 45 s; past this it's treated as closed
+
+    @property
+    def apns_ready(self) -> bool:
+        return bool(self.cfg.get("apns_pem") and self.cfg.get("apns_key_id"))
+
+    def set_apns_key(self, path: str, key_id: str):
+        """Store the .p8 key used to reach the iPhone app when it's closed. Raises ValueError if it's wrong."""
+        key_id = clean(key_id).upper()
+        if not re.fullmatch(r"[A-Z0-9]{10}", key_id):
+            raise ValueError("The Key ID is 10 letters and numbers. It's in the file name: AuthKey_XXXXXXXXXX.p8.")
+        pem = Path(path).read_text(encoding="ascii", errors="strict")
+        apns.check_key(pem)
+        self.cfg["apns_pem"], self.cfg["apns_key_id"] = pem, key_id
+        self.save()
+        self.event("devices", "")
+        self.event("log", "Apple push key saved. The iPhone app now gets notes when it's closed.")
+
+    def clear_apns_key(self):
+        self.cfg["apns_pem"], self.cfg["apns_key_id"] = "", ""
+        self.save()
+        self.event("devices", "")
+
+    def is_live(self, dev: dict) -> bool:
+        return time.time() - float(dev.get("live_at") or 0) < self.LIVE_SECONDS
+
+    def _apns(self, did, title, body, item, i):
+        dev = self.cfg["devices"].get(did)
+        target = (dev or {}).get("apns") or {}
+        if not target.get("token"):
+            return
+        try:
+            apns.send(target["token"], title, body, pem=self.cfg["apns_pem"], key_id=self.cfg["apns_key_id"],
+                      team_id=target.get("team", ""), topic=target.get("topic", ""),
+                      tag=f'{item["tag"]}-{i}', ttl=item["ttl"])
+            dev["last_ok"] = time.time()
+            dev.pop("last_error", None)
+        except apns.PushGone as e:
+            self.event("log", f'{dev.get("name", "iPhone")} stopped accepting Apple push ({e}). '
+                              "Open Glasses Hub on the phone to reconnect.")
+            dev["apns"] = None
+            dev["last_error"] = "Apple push token expired"
+            self.save()
+            self.event("devices", "")
+        except Exception as e:
+            dev["last_error"] = str(e)[:200]
+            self.event("log", f'Apple push to {dev.get("name", "iPhone")} failed: {e}')
+
     # ---------------------------------------------------------- delivery
     def quiet_now(self) -> bool:
         return bool(self.cfg.get("quiet_on")) and in_window(self.cfg.get("quiet_start"), self.cfg.get("quiet_end"))
@@ -423,7 +477,11 @@ class Hub:
         if item.get("to"):
             devices = {k: v for k, v in devices.items() if k == item["to"]}
         push_devs = {k: v for k, v in devices.items() if v.get("sub")}
-        relay_devs = {k: v for k, v in devices.items() if not v.get("sub")}
+        # The iPhone app: over the relay while it's running (it shows the note on the glasses' display),
+        # by Apple push when it isn't.
+        apns_devs = {k: v for k, v in devices.items() if not v.get("sub") and (v.get("apns") or {}).get("token")
+                     and self.apns_ready and not self.is_live(v)}
+        relay_devs = {k: v for k, v in devices.items() if not v.get("sub") and k not in apns_devs}
         # one layout per width setting (usually just one)
         widths = {}
         for did, d in push_devs.items():
@@ -437,6 +495,14 @@ class Hub:
                 self._wait_gap()
                 for did in ids:
                     self._push(did, t, b, item, i, len(parts))
+                self._last_push_at = time.time()
+        if apns_devs:
+            parts = fit(item["title"], item["body"], 70, 70, item["max_parts"])
+            shown = shown or parts
+            for i, (t, b) in enumerate(parts):
+                self._wait_gap()
+                for did in apns_devs:
+                    self._apns(did, t, b, item, i)
                 self._last_push_at = time.time()
         if relay_devs:
             tw = min(int((d.get("widths") or (70, 70))[0]) for d in relay_devs.values())
@@ -546,7 +612,8 @@ class Hub:
     def status_payload(self, to=None) -> dict:
         dev = self.cfg["devices"].get(to or "", {})
         return {"type": "status", "to": to, "t": time.time(), "pc": socket.gethostname(),
-                "push": bool(dev.get("sub")), "app_url": self.cfg.get("app_url"),
+                "push": bool(dev.get("sub")), "apns": self.apns_ready and bool((dev.get("apns") or {}).get("token")),
+                "app_url": self.cfg.get("app_url"),
                 "vapid": self.vapid_public, "quiet": self.quiet_now(),
                 "plugins": [p.describe() for p in self.plugins.values()]}
 
@@ -564,6 +631,16 @@ class Hub:
                 except (TypeError, ValueError):
                     dev.setdefault("widths", [70, 70])
                 dev["last_seen"] = time.time()
+                if "apns" in msg:                      # the iPhone app's Apple push address, when it has one
+                    a = msg.get("apns") or {}
+                    token = str(a.get("token") or "").lower()
+                    ok = re.fullmatch(r"[0-9a-f]{64,200}", token) and re.fullmatch(r"[A-Z0-9]{10}", str(a.get("team") or ""))
+                    dev["apns"] = {"token": token, "team": a["team"], "topic": clean(a.get("topic"))[:120]} if ok else None
+                if msg.get("live"):
+                    dev["live_at"] = time.time()
+            if did in devs and cmd == "live":
+                devs[did]["live_at"] = time.time() if msg.get("on") else 0
+                return
             if cmd == "hello":
                 self.save()
                 self.event("devices", "")

@@ -31,6 +31,17 @@ Wikipedia's "On this day".
 After that, notes keep arriving with the phone app closed. In iPhone **Settings → Notifications →
 Glasses Hub**, keep **Immediate Delivery** on, and allow it in any Focus modes you use.
 
+## The iPhone app
+
+The native iPhone app (see [`ios`](../ios)) pairs with the same code. To reach it when it's closed, this PC
+needs your Apple push key:
+
+1. In your Apple Developer account, under Keys, make a key with **Apple Push Notifications service** turned
+   on and download it. Apple lets you download it once.
+2. In Glasses Hub on the PC, open **Settings**, and under **iPhone app (Apple push)** click **Choose key file…**
+   and pick the `AuthKey_XXXXXXXXXX.p8` file.
+3. If you set up Glasses Hub before this was added, run **setup.bat** once more. It installs one extra package.
+
 ## Using it
 
 - **Plug-ins tab:** turn each one on or off, change its settings, and use its buttons. The same buttons
