@@ -14,6 +14,11 @@ The phone app doesn't need to stay open. Notes arrive even when it's closed and 
   - Run `setup.bat`.
   - Type the pairing code it shows into the phone app.
 
+## iPhone app (new)
+
+There is now a native iPhone app in [`ios`](ios). It turns the glasses' caption page into a live screen:
+a scoreboard, trivia, a timer, weather and more stay up and update in place. See [ios/README.md](ios/README.md).
+
 ## What's in it
 
 - **NFL scores:**
