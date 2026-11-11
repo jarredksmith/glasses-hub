@@ -100,6 +100,11 @@ final class HubModel: ObservableObject {
     @Published var pageSeconds: Double { didSet { defaults.set(pageSeconds, forKey: "pageSeconds") } }
     @Published var volumePaging: Bool { didSet { defaults.set(volumePaging, forKey: "volumePaging"); applyKeepAwake() } }
     @Published var gmailClientID: String { didSet { defaults.set(gmailClientID, forKey: "gmailClientID") } }
+    /// Mail needs the owner's own Google sign-in set-up, so it stays hidden unless switched on.
+    @Published var showMail: Bool { didSet { defaults.set(showMail, forKey: "showMail") } }
+    /// The apps on offer, on the phone and in the glasses' menu.
+    var apps: [Program] { Program.allCases.filter { $0 != .mail || showMail } }
+    @Published var setupSeen: Bool { didSet { defaults.set(setupSeen, forKey: "setupSeen") } }
     @Published var mailQuery: String { didSet { defaults.set(mailQuery, forKey: "mailQuery"); mailDue = .distantPast } }
     @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "lookUp") } }
     /// What a look up does when head navigation is on: false = next, true = select.
@@ -254,6 +259,9 @@ final class HubModel: ObservableObject {
         headAction = defaults.object(forKey: "headAction") as? Int ?? 1
         doubleClickAction = defaults.object(forKey: "doubleClickAction") as? Int ?? 2
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
+        showMail = d.object(forKey: "showMail") as? Bool ?? !(d.string(forKey: "gmailClientID") ?? "").isEmpty
+        // Anyone who already has the display set up doesn't need the first-run guide.
+        setupSeen = d.object(forKey: "setupSeen") as? Bool ?? (d.object(forKey: "crownPaging") != nil || d.object(forKey: "lookUp") != nil)
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
         scoresView = ScoresView(rawValue: d.string(forKey: "scoresView") ?? "") ?? .auto
         pinnedGame = d.string(forKey: "pinnedGame") ?? ""
@@ -487,7 +495,7 @@ final class HubModel: ObservableObject {
         if what == .previous { goBack(); return }
         let next = what == .next
         if menuOpen {
-            let all = Program.allCases
+            let all = apps
             if next { menuIndex = (menuIndex + 1) % all.count } else { menuOpen = false; program = all[menuIndex] }
             return
         }
@@ -538,7 +546,7 @@ final class HubModel: ObservableObject {
 
     /// The crown turned backwards: the previous page, item or view. Never opens or closes anything.
     private func goBack() {
-        if menuOpen { let n = Program.allCases.count; menuIndex = (menuIndex + n - 1) % n; return }
+        if menuOpen { let n = apps.count; menuIndex = (menuIndex + n - 1) % n; return }
         if listEnd { listEnd = false; return }                     // back from the end stop to the last item
         let earlierPage = pageCount > 1 && pageIndex > 0
         switch program {
@@ -589,7 +597,7 @@ final class HubModel: ObservableObject {
     }
 
     private func openMenu() {
-        menuIndex = Program.allCases.firstIndex(of: program) ?? 0
+        menuIndex = apps.firstIndex(of: program) ?? 0
         menuOpen = true
     }
     func closeMenu() { menuOpen = false; listEnd = false }
@@ -616,7 +624,7 @@ final class HubModel: ObservableObject {
             let shown = pages.count - 1 - Int(testCardsUntil.timeIntervalSince(now) / 12)
             return Card(pages[max(0, min(pages.count - 1, shown))])
         }
-        if menuOpen { return AppMenu.card(titles: Program.allCases.map(\.title), selected: menuIndex, screen: screen, glyphs: glyphs) }
+        if menuOpen { return AppMenu.card(titles: apps.map(\.title), selected: menuIndex, screen: screen, glyphs: glyphs) }
         if listEnd {
             let what: String
             switch program { case .news: what = "headlines"; case .mail: what = "the inbox"; case .scores: what = "games"; case .agenda: what = "events"; default: what = "the list" }

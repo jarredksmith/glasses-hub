@@ -73,7 +73,7 @@ struct DisplayView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Showing").font(.headline)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
-                ForEach(Program.allCases) { program in
+                ForEach(model.apps) { program in
                     Button { model.program = program } label: {
                         VStack(spacing: 6) {
                             Image(systemName: program.icon).font(.title3)

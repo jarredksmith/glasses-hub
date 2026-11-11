@@ -43,6 +43,7 @@ struct GlassesHubApp: App {
 }
 
 struct RootView: View {
+    @EnvironmentObject private var model: HubModel
     var body: some View {
         TabView {
             DisplayView().tabItem { Label("Display", systemImage: "eyeglasses") }
@@ -50,5 +51,6 @@ struct RootView: View {
             PCView().tabItem { Label("PC", systemImage: "desktopcomputer") }
             SettingsView().tabItem { Label("Settings", systemImage: "gearshape") }
         }
+        .sheet(isPresented: Binding(get: { !model.setupSeen }, set: { if !$0 { model.setupSeen = true } })) { SetupView() }
     }
 }

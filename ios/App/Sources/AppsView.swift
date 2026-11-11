@@ -7,7 +7,7 @@ struct AppsView: View {
 
     var body: some View {
         NavigationStack {
-            List(Program.allCases) { program in
+            List(model.apps) { program in
                 NavigationLink {
                     ProgramSettings(program: program)
                 } label: {

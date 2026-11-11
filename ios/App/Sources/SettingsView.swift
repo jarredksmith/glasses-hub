@@ -96,6 +96,8 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Button("Show the setup guide") { model.setupSeen = false }
+                    Toggle("Show the Mail app (needs your own Google sign-in set-up)", isOn: $model.showMail)
                     NavigationLink("Connection log") { LogView() }
                     Toggle("Log what the glasses report", isOn: $model.logEvents)
                     LabeledContent("Screens sent this session", value: "\(link.framesSent)")
