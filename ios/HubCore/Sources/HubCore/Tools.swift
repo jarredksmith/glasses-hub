@@ -168,10 +168,11 @@ public enum Picker {
         }
     }
 
-    /// A die face as three rows of pips.
+    /// A die face as three rows of pips. Every cell is a double-width character (a pip or a full-width
+    /// space), so the rows stay the same width on the glasses; an ordinary space is only half as wide.
     public static func face(_ value: Int) -> [String] {
-        let on = "●", off = " "
-        func row(_ a: Bool, _ b: Bool, _ c: Bool) -> String { "\(a ? on : off) \(b ? on : off) \(c ? on : off)" }
+        let on = "●", off = "\u{3000}"
+        func row(_ a: Bool, _ b: Bool, _ c: Bool) -> String { (a ? on : off) + (b ? on : off) + (c ? on : off) }
         switch value {
         case 1: return [row(false, false, false), row(false, true, false), row(false, false, false)]
         case 2: return [row(true, false, false), row(false, false, false), row(false, false, true)]
@@ -193,10 +194,10 @@ public enum Picker {
         }
         switch mode {
         case .d6:
-            for row in face(result.values.first ?? 1) { lines.append("[ " + row + " ]") }
+            for row in face(result.values.first ?? 1) { lines.append("[" + row + "]") }
         case .twoD6:
             let a = face(result.values.first ?? 1), b = face(result.values.last ?? 1)
-            for i in 0..<3 { lines.append("[ " + a[i] + " ]  [ " + b[i] + " ]") }
+            for i in 0..<3 { lines.append("[" + a[i] + "]\u{3000}[" + b[i] + "]") }
             lines.append("Total " + result.text)
         case .coin, .d20:
             lines.append(""); lines.append(TextLayout.wide(result.text))

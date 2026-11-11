@@ -396,7 +396,8 @@ final class ToolsTests: XCTestCase {
         XCTAssertEqual(Picker.roll(.coin, using: { _ in 1 }).text, "Tails")
         XCTAssertEqual(Picker.roll(.twoD6, using: { _ in 5 }).text, "12")
         XCTAssertEqual(Picker.roll(.list, options: ["a", "b"], using: { _ in 1 }).text, "b")
-        XCTAssertEqual(Picker.face(5), ["●   ●", "  ●  ", "●   ●"])
+        XCTAssertEqual(Picker.face(5), ["●\u{3000}●", "\u{3000}●\u{3000}", "●\u{3000}●"])
+        XCTAssertTrue(Picker.face(1).allSatisfy { $0.count == 3 })
         let screen = Screen(rows: 7, columns: 28, wideColumns: 14)
         XCTAssertEqual(Picker.card(mode: .twoD6, result: Picker.roll(.twoD6, using: { _ in 0 }), rolling: false, screen: screen).lines.last, "Total 2")
     }
