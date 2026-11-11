@@ -101,9 +101,10 @@ final class HubModel: ObservableObject {
     @Published var volumePaging: Bool { didSet { defaults.set(volumePaging, forKey: "volumePaging"); applyKeepAwake() } }
     @Published var gmailClientID: String { didSet { defaults.set(gmailClientID, forKey: "gmailClientID") } }
     @Published var mailQuery: String { didSet { defaults.set(mailQuery, forKey: "mailQuery"); mailDue = .distantPast } }
-    @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "headPaging") } }
+    @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "lookUp") } }
     /// What a look up does when head navigation is on: false = next, true = select.
     @Published var headAction: Int { didSet { defaults.set(headAction, forKey: "headAction") } }   // 0 next, 1 select, 2 apps menu
+    @Published var doubleClickAction: Int { didSet { defaults.set(doubleClickAction, forKey: "doubleClickAction") } }   // same values
     @Published var crownPaging: Bool { didSet { defaults.set(crownPaging, forKey: "crownPaging") } }
     /// Turning the crown back selects, like a click. The glasses report a crown click only now and
     /// then (one came through, then none for minutes), while every turn is reported, so the back turn
@@ -249,8 +250,9 @@ final class HubModel: ObservableObject {
         logEvents = bool("logEvents", false)
         crownPaging = bool("crownPaging", true)
         crownBack = bool("crownTwoWay", true)
-        headPaging = bool("headPaging", false)
-        headAction = defaults.object(forKey: "headAction") as? Int ?? 2
+        headPaging = bool("lookUp", true)
+        headAction = defaults.object(forKey: "headAction") as? Int ?? 1
+        doubleClickAction = defaults.object(forKey: "doubleClickAction") as? Int ?? 2
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
         scoresView = ScoresView(rawValue: d.string(forKey: "scoresView") ?? "") ?? .auto
@@ -295,6 +297,10 @@ final class HubModel: ObservableObject {
             self.input(.select)
             return true
         }
+        link.onDoubleClick = { [weak self] in
+            guard let self, self.crownPaging, self.link.isShowing else { return }
+            self.gesture(self.doubleClickAction)
+        }
         link.onCrown = { [weak self] direction in
             guard let self, self.crownPaging, self.link.isShowing else { return }
             if direction == 0 { self.input(.select) }
@@ -303,11 +309,7 @@ final class HubModel: ObservableObject {
         link.onHeadRaise = { [weak self] in
             guard let self, self.headPaging, self.link.isShowing else { return }
             self.link.record("Look up.")
-            switch self.headAction {
-            case 0: self.input(.next)
-            case 1: self.input(.select)
-            default: if self.menuOpen { self.closeMenu() } else { self.openMenu() }
-            }
+            self.gesture(self.headAction)
         }
         buttons.onPress = { [weak self] direction in
             guard let self, self.link.isShowing else { return }
@@ -575,6 +577,17 @@ final class HubModel: ObservableObject {
         default: break
         }
     }
+    /// What a look up or a double click does: 0 next, 1 select, 2 the apps menu (again to close it).
+    private func gesture(_ action: Int) {
+        switch action {
+        case 0: input(.next)
+        case 1: input(.select)
+        default:
+            link.record("Apps menu " + (menuOpen ? "closed." : "opened."))
+            if menuOpen { closeMenu() } else { openMenu() }
+        }
+    }
+
     private func openMenu() {
         menuIndex = Program.allCases.firstIndex(of: program) ?? 0
         menuOpen = true

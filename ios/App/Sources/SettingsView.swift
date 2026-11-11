@@ -36,6 +36,11 @@ struct SettingsView: View {
                             value: $model.pageSeconds, in: 0...60, step: 2)
                     Toggle("Navigate with the crown", isOn: $model.crownPaging)
                     Toggle("Turn the crown back to go back", isOn: $model.crownBack)
+                    Picker("A crown double click means", selection: $model.doubleClickAction) {
+                        Text("Apps menu").tag(2)
+                        Text("Select").tag(1)
+                        Text("Next").tag(0)
+                    }
                     Picker("After a crown click", selection: $model.clickRearm) {
                         Text("Do nothing").tag(0)
                         Text("Reopen the page").tag(2)
