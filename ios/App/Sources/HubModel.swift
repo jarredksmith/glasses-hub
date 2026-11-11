@@ -240,7 +240,6 @@ final class HubModel: ObservableObject {
         crownScroll = bool("crownScroll", false)
         holdSelects = bool("holdSelects", false)
         translationMode = defaults.integer(forKey: "translationMode")
-        link.translationMode = translationMode
         volumePaging = bool("volumePaging", true)
         logEvents = bool("logEvents", false)
         crownPaging = bool("crownPaging", true)
@@ -283,6 +282,7 @@ final class HubModel: ObservableObject {
         calendarAllowed = calendar.allowed
         link.logEvents = logEvents
         mailSignedIn = google.signedIn
+        link.translationMode = translationMode
         link.onHoldExit = { [weak self] in
             guard let self, self.holdSelects else { return false }
             self.input(.select)
