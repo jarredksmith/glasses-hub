@@ -130,7 +130,8 @@ struct ProgramControls: View {
             case .trivia: trivia
             case .timer: timer
             case .reader:
-                Text("Long text turns a page every \(Int(model.pageSeconds)) seconds. Edit it under Apps > Reader.").font(.footnote).foregroundStyle(.secondary)
+                TeleprompterButton(title: "Reader", text: model.readerText).buttonStyle(.bordered)
+                Text("Edit the text under Apps > Reader.").font(.footnote).foregroundStyle(.secondary)
             case .news: news
             case .facts:
                 Button("New fact now") { model.nextFact() }.buttonStyle(.bordered)
@@ -195,6 +196,7 @@ struct ProgramControls: View {
         .buttonStyle(.bordered)
         if let reading = model.reading {
             Text("Reading: \(reading.title)").font(.footnote).foregroundStyle(.secondary)
+            TeleprompterButton(title: reading.title, text: model.readingText).buttonStyle(.bordered)
         }
     }
 }
@@ -209,7 +211,7 @@ struct PageControls: View {
                 Button { model.pageStep(-1) } label: { Image(systemName: "chevron.left") }.disabled(model.pageIndex == 0)
                 Button { model.togglePagesPaused() } label: { Image(systemName: model.pagesPaused ? "play.fill" : "pause.fill") }
                 Button { model.pageStep(1) } label: { Image(systemName: "chevron.right") }.disabled(model.pageIndex >= model.pageCount - 1)
-                Text("Page \(model.pageIndex + 1) of \(model.pageCount)" + (model.pagesPaused ? ", paused" : "")).font(.footnote)
+                Text("Page \(model.pageIndex + 1) of \(model.pageCount)" + (model.pagesPaused || model.pageSeconds == 0 ? "" : ", auto")).font(.footnote)
                 Spacer()
                 Button("Start over") { model.pageRestart() }.font(.footnote)
             }

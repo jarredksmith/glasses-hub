@@ -39,6 +39,10 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     private var deadline: TimeInterval?
     private var sliceTask: Task<Void, Never>?
     private var telemetrySeen = Set<String>()
+    /// When on, everything the glasses report is written to the log with its arrival time. For finding
+    /// out whether crown turns and clicks reach the phone as they happen.
+    var logEvents = false
+    private var eventsLogged = 0
     private var run = 0
 
     private var now: TimeInterval { Date().timeIntervalSinceReferenceDate }
@@ -53,7 +57,7 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
         session.refreshInterval = refresh ? 30 : nil
         session.finishScrollingText = finishScrollingText
         decoder = FrameStreamDecoder()
-        rows = size.rows; framesSent = 0
+        rows = size.rows; framesSent = 0; eventsLogged = 0
         userStopped = false; wantsStart = true; run += 1
         state = .looking; status = "Looking for your glasses…"
         deadline = now + 10
@@ -243,6 +247,7 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard peripheral === self.peripheral, characteristic === incoming, error == nil, let data = characteristic.value else { return }
         for frame in decoder.append(data) {
+            if logEvents, eventsLogged < 400 { eventsLogged += 1; note(describe(frame)) }
             if frame.business == CaptionWire.business {
                 perform(session.received(frame, now: now))
             } else if frame.business == 15, frame.isPlain, let message = Envelope(frame.payload),
@@ -257,6 +262,34 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
                 }
             }
         }
+    }
+
+    /// One line about a packet from the glasses, with anything that identifies the device blanked.
+    private func describe(_ frame: GlassesFrame) -> String {
+        var line = "EVENT ch\(frame.business)"
+        guard frame.isPlain, let message = Envelope(frame.payload) else { return line + " (\(frame.payload.count) bytes, not readable)" }
+        line += " type \(message.type)"
+        if message.dataBytes > 0 { line += " +\(message.dataBytes) bytes" }
+        func scrub(_ value: Any) -> Any {
+            if let dict = value as? [String: Any] {
+                var out = [String: Any]()
+                for (key, item) in dict {
+                    let k = key.lowercased()
+                    let hide = ["sn", "did", "mac", "sid", "uid", "token", "account", "serial"].contains { k == $0 || k.hasSuffix($0) || k.hasPrefix($0) }
+                    out[key] = hide ? "-" : scrub(item)
+                }
+                return out
+            }
+            if let list = value as? [Any] { return list.prefix(6).map(scrub) }
+            if let text = value as? String {
+                // some fields hold JSON inside a string; open it so its fields are scrubbed too
+                if text.hasPrefix("{"), let inner = try? JSONSerialization.jsonObject(with: Data(text.utf8)) { return scrub(inner) }
+                return text.count > 60 ? String(text.prefix(60)) + "…" : text
+            }
+            return value
+        }
+        let body = (try? JSONSerialization.data(withJSONObject: scrub(message.json), options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        return line + " " + String(body.prefix(420))
     }
 
     // MARK: Ending
@@ -297,7 +330,8 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     }
 
     private func note(_ line: String) {
-        let stamp = Date().formatted(date: .omitted, time: .standard)
+        let clock = DateFormatter(); clock.dateFormat = "HH:mm:ss.SS"
+        let stamp = clock.string(from: Date())
         log.append("\(stamp)  \(line)")
         if log.count > 200 { log.removeFirst(log.count - 200) }
     }

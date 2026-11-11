@@ -51,6 +51,12 @@ with the display on). If the display can't open, the alert goes out as a notific
 - **Symbols.** Dots, stars, arrows, squares and box lines from the old GB2312 set, which a Chinese-market
   display font should carry. Settings has three levels (plain, symbols, symbols plus shaded bars) and a
   test that puts every character used on the glasses.
+- **Buttons turn pages.** With the display on, the phone's volume buttons (or a Bluetooth ring that sends
+  them) step pages forward and back, even with the phone locked. The volume is put back after each press.
+- **Teleprompter hand-off.** "Send to teleprompter" saves the text as a .txt file in this app's folder
+  (Files > On My iPhone > Glasses Hub) and opens the share sheet. The RayNeo app's teleprompter imports
+  it, and there the crown scrolls and stays put. Sending straight into the teleprompter isn't possible
+  from an iPhone app: that transfer runs over classic Bluetooth, which iOS doesn't open to apps.
 - **Pages, not scrolling.** The caption page jumps back to the end of scrolled text after a few seconds,
   so anything taller than the screen is split into pages that turn on a timer, with pause and step
   buttons on the phone. Sending long text marked "finished" so the crown can scroll it is an experiment

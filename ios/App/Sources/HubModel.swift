@@ -79,6 +79,7 @@ final class HubModel: ObservableObject {
     let link = GlassesLink()
     let pc = PCLink()
     private let keepAwake = KeepAwake()
+    private let buttons = VolumeButtons()
     private let calendar = CalendarReader()
     private let defaults = UserDefaults.standard
 
@@ -95,6 +96,8 @@ final class HubModel: ObservableObject {
 
     @Published var glyphStyle: GlyphStyle { didSet { defaults.set(glyphStyle.rawValue, forKey: "glyphStyle") } }
     @Published var pageSeconds: Double { didSet { defaults.set(pageSeconds, forKey: "pageSeconds") } }
+    @Published var volumePaging: Bool { didSet { defaults.set(volumePaging, forKey: "volumePaging"); applyKeepAwake() } }
+    @Published var logEvents: Bool { didSet { defaults.set(logEvents, forKey: "logEvents"); link.logEvents = logEvents } }
     @Published var crownScroll: Bool { didSet { defaults.set(crownScroll, forKey: "crownScroll") } }
     @Published var scoresView: ScoresView { didSet { defaults.set(scoresView.rawValue, forKey: "scoresView") } }
     @Published var pinnedGame: String { didSet { defaults.set(pinnedGame, forKey: "pinnedGame"); repick() } }
@@ -203,6 +206,8 @@ final class HubModel: ObservableObject {
         glyphStyle = GlyphStyle(rawValue: d.string(forKey: "glyphStyle") ?? "") ?? .symbols
         pageSeconds = number("pageSeconds", 12)
         crownScroll = bool("crownScroll", false)
+        volumePaging = bool("volumePaging", true)
+        logEvents = bool("logEvents", false)
         scoresView = ScoresView(rawValue: d.string(forKey: "scoresView") ?? "") ?? .auto
         pinnedGame = d.string(forKey: "pinnedGame") ?? ""
         weatherView = WeatherView(rawValue: d.string(forKey: "weatherView") ?? "") ?? .cycle
@@ -236,6 +241,8 @@ final class HubModel: ObservableObject {
         timer = HubTimer(minutes: minutes)
 
         calendarAllowed = calendar.allowed
+        link.logEvents = logEvents
+        buttons.onPress = { [weak self] direction in self?.buttonPressed(direction) }
         popFactDue = Date().addingTimeInterval(max(1, popFactMinutes) * 60)
         applyKeepAwake()
         link.onEnded = { [weak self] reason in self?.displayEnded(reason) }
@@ -286,7 +293,9 @@ final class HubModel: ObservableObject {
     }
 
     private func applyKeepAwake() {
-        keepAwake.set(runWhenLocked && (link.isRunning || popUps))
+        // Volume-button paging needs the audio session too, so it keeps the app awake while the display is on.
+        keepAwake.set((runWhenLocked && (link.isRunning || popUps)) || (volumePaging && link.isRunning))
+        buttons.set(volumePaging && link.isRunning)
     }
 
     private func displayEnded(_ reason: String) {
@@ -365,13 +374,32 @@ final class HubModel: ObservableObject {
         }
     }
 
+    /// A volume button (or scroll ring) was pressed: forward is +1, back is -1. Turns the page when there
+    /// are pages; otherwise does the obvious next thing for what's showing.
+    private func buttonPressed(_ direction: Int) {
+        guard link.isShowing else { return }
+        if pageCount > 1, !(direction > 0 && pageIndex >= pageCount - 1 && program == .news) {
+            pageStep(direction)
+            return
+        }
+        switch program {
+        case .news:
+            if reading != nil, direction < 0 { stopReading() } else { newsStep(direction) }
+        case .trivia:
+            if direction > 0 { if round?.phase == .question { triviaReveal() } else { triviaNext() } }
+        case .facts:
+            if direction > 0 { nextFact() }
+        default: break
+        }
+    }
+
     func pageStep(_ by: Int) { pager.step(by, now: Date().timeIntervalSinceReferenceDate) }
     func pageRestart() { pager.restart(now: Date().timeIntervalSinceReferenceDate); pagesPaused = false }
     func togglePagesPaused() { pagesPaused.toggle() }
 
     private var glyphs: Glyphs { Glyphs(glyphStyle) }
     /// Which of `count` views is up, for programs that take turns.
-    private func turn(_ count: Int, now: Date) -> Int { count < 2 ? 0 : Int(now.timeIntervalSinceReferenceDate / max(4, pageSeconds)) % count }
+    private func turn(_ count: Int, now: Date) -> Int { count < 2 ? 0 : Int(now.timeIntervalSinceReferenceDate / (pageSeconds == 0 ? 10 : max(4, pageSeconds))) % count }
     private func lines(of text: String) -> [String] {
         let key = "\(screen.columns)|\(text.utf8.count)|\(text.hashValue)"
         if wrapped.key != key { wrapped = (key, TextLayout.wrap(text, width: screen.columns)) }
@@ -400,7 +428,7 @@ final class HubModel: ObservableObject {
             }
             if dashNews, let top = news.first { add(glyphs.note, top.title) }
             if !dashNote.isEmpty { add(glyphs.star, dashNote) }
-            return Dashboard.card(now: now, summaries: lines, screen: screen, rotate: max(4, pageSeconds))
+            return Dashboard.card(now: now, summaries: lines, screen: screen, rotate: pageSeconds == 0 ? 10 : max(4, pageSeconds))
         case .scores:
             if scoresView == .league {
                 let list = Scoreboard.ordered(games, teams: followed)
@@ -672,6 +700,29 @@ final class HubModel: ObservableObject {
             if text.isEmpty, item.summary.isEmpty { self.readingNote = "Couldn't get this story's text." }
         }
     }
+    /// Save text as a .txt file in this app's folder (visible in the Files app under "Glasses Hub"), ready
+    /// to import into the RayNeo app's teleprompter. Returns the file, or nil if it couldn't be written.
+    func saveForTeleprompter(title: String, text: String) -> URL? {
+        guard let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " -"))
+        var name = String(String.UnicodeScalarView(TextLayout.clean(title).unicodeScalars.filter { allowed.contains($0) })).trimmingCharacters(in: .whitespaces)
+        if name.isEmpty { name = "Reading" }
+        let url = folder.appendingPathComponent(String(name.prefix(50)) + ".txt")
+        do { try Data(text.utf8).write(to: url, options: .atomic) } catch { return nil }
+        // keep the folder from filling up: only the 15 newest files stay
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let dated = files.filter { $0.pathExtension == "txt" }.map { ($0, (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) }
+        for (old, _) in dated.sorted(by: { $0.1 > $1.1 }).dropFirst(15) { try? FileManager.default.removeItem(at: old) }
+        return url
+    }
+
+    /// The full text of the story being read, for the teleprompter button.
+    var readingText: String {
+        guard let reading else { return "" }
+        let body = articles[reading.id] ?? ""
+        return reading.title + "\n\n" + (body.isEmpty ? reading.summary : body)
+    }
+
     func readCurrent() { if news.indices.contains(newsIndex) { read(news[newsIndex]) } }
     func stopReading() { reading = nil; headlineTurnedAt = Date() }
     func refreshNews() { newsDue = .distantPast }

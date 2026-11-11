@@ -218,6 +218,7 @@ struct ProgramSettings: View {
             Button("Paste from clipboard") {
                 if let text = UIPasteboard.general.string { model.readerText = text }
             }
+            TeleprompterButton(title: "Reader", text: model.readerText)
             if !model.readerText.isEmpty { Button("Clear", role: .destructive) { model.readerText = "" } }
         } header: { Text("Text to read") } footer: {
             Text("Long text is shown a screen at a time and turns by itself. Set the speed under Settings; pause or step pages from the Display tab.")

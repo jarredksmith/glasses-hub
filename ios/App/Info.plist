@@ -10,6 +10,11 @@
 	<!-- The developer team that signed the app. The PC needs it to address Apple push. -->
 	<key>HubTeamID</key>
 	<string>$(DEVELOPMENT_TEAM)</string>
+	<!-- Show this app's folder in the Files app, so saved text can be imported into the RayNeo teleprompter. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
