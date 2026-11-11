@@ -113,6 +113,8 @@ final class HubModel: ObservableObject {
     @Published var crownScroll: Bool { didSet { defaults.set(crownScroll, forKey: "crownScroll") } }
     /// Holding the crown (which makes the glasses leave the page) counts as select; the page reopens.
     @Published var holdSelects: Bool { didSet { defaults.set(holdSelects, forKey: "holdSelects") } }
+    /// How to keep crown clicks coming (see GlassesLink.rearm).
+    @Published var clickRearm: Int { didSet { defaults.set(clickRearm, forKey: "clickRearm"); link.rearm = clickRearm } }
     /// Experiment for finding a click the glasses report every time. 0 = off.
     @Published var translationMode: Int { didSet { defaults.set(translationMode, forKey: "translationMode"); link.translationMode = translationMode } }
     @Published var scoresView: ScoresView { didSet { defaults.set(scoresView.rawValue, forKey: "scoresView") } }
@@ -242,6 +244,7 @@ final class HubModel: ObservableObject {
         crownScroll = bool("crownScroll", false)
         holdSelects = bool("holdSelects", false)
         translationMode = defaults.integer(forKey: "translationMode")
+        clickRearm = defaults.object(forKey: "clickRearm") as? Int ?? 2
         volumePaging = bool("volumePaging", true)
         logEvents = bool("logEvents", false)
         crownPaging = bool("crownPaging", true)
@@ -286,6 +289,7 @@ final class HubModel: ObservableObject {
         link.logEvents = logEvents
         mailSignedIn = google.signedIn
         link.translationMode = translationMode
+        link.rearm = clickRearm
         link.onHoldExit = { [weak self] in
             guard let self, self.holdSelects else { return false }
             self.input(.select)

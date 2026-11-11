@@ -27,6 +27,9 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     /// The wearer held the crown, which makes the glasses leave the page. Return true to reopen it.
     var onHoldExit: (() -> Bool)?
     var translationMode = 0
+    /// After each crown click, start a new page session so the next click is reported too.
+    /// 0 = off, 1 = new session over the open page, 2 = close the page and open it again.
+    var rearm = 0
     private var lastDepth = 0
     private var lastBack = Date.distantPast
     /// The wearer tilted their head up while this app's page was up.
@@ -297,7 +300,14 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
                             onCrown?(-1)
                         }
                         lastDepth = depth
-                    case .crownClick: note("Crown click."); onCrown?(0)
+                    case .crownClick:
+                        note("Crown click.")
+                        onCrown?(0)
+                        if rearm > 0 {
+                            let actions = session.renew(now: now, closeFirst: rearm == 2)
+                            if !actions.isEmpty { note(rearm == 2 ? "Reopening the page so the next click counts." : "New page session so the next click counts.") }
+                            perform(actions)
+                        }
                     case .holdExit:
                         note("Crown held: the glasses left the page.")
                         if onHoldExit?() == true { reopen() }

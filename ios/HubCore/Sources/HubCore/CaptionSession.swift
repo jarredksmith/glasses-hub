@@ -154,6 +154,20 @@ public struct CaptionSession {
         return [.write(packet(CaptionWire.text(sid: sid, frame: wanted, finished: wantedFinished || (wantedScrolls && finishScrollingText), translationMode: translationMode)), text: true)]
     }
 
+    /// Start a fresh page session on the glasses in place of the current one. The glasses report the
+    /// first crown click of each caption session and then go quiet, so a new session after every click
+    /// keeps clicks coming. `closeFirst` closes the old page before opening the new one.
+    public mutating func renew(now: TimeInterval, closeFirst: Bool) -> [Action] {
+        guard phase == .active, busy == nil else { return [] }
+        var actions: [Action] = []
+        if closeFirst { actions.append(.write(packet(CaptionWire.stop(sid: sid)), text: false)) }
+        sid = CaptionWire.newSessionID()
+        phase = .configuring; busy = .configure; busySince = now
+        lastSentFrame = nil; textAllowedAt = .infinity
+        actions.append(.write(packet(CaptionWire.configure(sid: sid, fontSize: fontSize, maxLines: maxLines)), text: false))
+        return actions
+    }
+
     /// Close this session's page. Safe to call at any point.
     public mutating func stop(now: TimeInterval) -> [Action] {
         switch phase {

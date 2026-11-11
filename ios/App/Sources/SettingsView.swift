@@ -35,6 +35,11 @@ struct SettingsView: View {
                     Stepper(model.pageSeconds == 0 ? "Pages turn only when I press a button" : "Turn the page every \(Int(model.pageSeconds)) seconds",
                             value: $model.pageSeconds, in: 0...60, step: 2)
                     Toggle("Navigate with the crown", isOn: $model.crownPaging)
+                    Picker("After a crown click", selection: $model.clickRearm) {
+                        Text("Reopen the page").tag(2)
+                        Text("Refresh quietly").tag(1)
+                        Text("Do nothing").tag(0)
+                    }
                     Toggle("Hold the crown to select (page reopens)", isOn: $model.holdSelects)
                     Picker("Click experiment", selection: $model.translationMode) {
                         Text("Off").tag(0)
