@@ -24,6 +24,9 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     @Published private(set) var battery: Int?
     /// The crown was turned (+1) or clicked (-1) while this app's page was up.
     var onCrown: ((Int) -> Void)?
+    /// The wearer tilted their head up while this app's page was up.
+    var onHeadRaise: (() -> Void)?
+    private var lastRaise = Date.distantPast
     private var lastTurn = Date.distantPast
 
     /// Called when a running display ends for any reason other than the user pressing Stop.
@@ -262,6 +265,9 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
                         if Date().timeIntervalSince(lastTurn) > 0.3 { onCrown?(1) }
                         lastTurn = Date()
                     case .crownClick: onCrown?(-1)
+                    case .headRaise:
+                        if Date().timeIntervalSince(lastRaise) > 1.5 { onHeadRaise?() }
+                        lastRaise = Date()
                     }
                 }
             }

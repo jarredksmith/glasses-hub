@@ -268,6 +268,10 @@ final class GlassesReportTests: XCTestCase {
         XCTAssertEqual(GlassesReport(frame(double))?.battery, 46)
         XCTAssertEqual(GlassesReport(frame(stats))?.battery, 46)
         XCTAssertNil(GlassesReport(frame(other)))
+        let raise = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"raise_angle_deg":16,"screen_state":"screen_on","trigger_source":"raise_head"}}}}"#
+        XCTAssertEqual(GlassesReport(frame(raise))?.action, .headRaise)
+        let entry = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"access_type":"enter","entry_source":"raise_head"}}}}"#
+        XCTAssertNil(GlassesReport(frame(entry)))                          // the second report of the same tilt isn't counted
         XCTAssertNil(GlassesReport(frame(scroll, business: 19)))
         XCTAssertNil(GlassesReport(frame(#"{"cmd":"screen_status"}"#)))
     }

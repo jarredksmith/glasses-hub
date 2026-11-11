@@ -101,6 +101,7 @@ final class HubModel: ObservableObject {
     @Published var volumePaging: Bool { didSet { defaults.set(volumePaging, forKey: "volumePaging"); applyKeepAwake() } }
     @Published var gmailClientID: String { didSet { defaults.set(gmailClientID, forKey: "gmailClientID") } }
     @Published var mailQuery: String { didSet { defaults.set(mailQuery, forKey: "mailQuery"); mailDue = .distantPast } }
+    @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "headPaging") } }
     @Published var crownPaging: Bool { didSet { defaults.set(crownPaging, forKey: "crownPaging") } }
     @Published var logEvents: Bool { didSet { defaults.set(logEvents, forKey: "logEvents"); link.logEvents = logEvents } }
     @Published var crownScroll: Bool { didSet { defaults.set(crownScroll, forKey: "crownScroll") } }
@@ -229,6 +230,7 @@ final class HubModel: ObservableObject {
         volumePaging = bool("volumePaging", true)
         logEvents = bool("logEvents", false)
         crownPaging = bool("crownPaging", true)
+        headPaging = bool("headPaging", false)
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
         scoresView = ScoresView(rawValue: d.string(forKey: "scoresView") ?? "") ?? .auto
@@ -269,6 +271,10 @@ final class HubModel: ObservableObject {
         link.onCrown = { [weak self] direction in
             guard let self, self.crownPaging, self.link.isShowing else { return }
             self.input(direction > 0 ? .next : .select)
+        }
+        link.onHeadRaise = { [weak self] in
+            guard let self, self.headPaging, self.link.isShowing else { return }
+            self.input(.next)
         }
         buttons.onPress = { [weak self] direction in
             guard let self, self.link.isShowing else { return }

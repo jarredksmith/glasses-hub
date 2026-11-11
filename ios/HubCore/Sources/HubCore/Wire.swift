@@ -219,6 +219,8 @@ public struct GlassesReport: Equatable {
         case crownTurn
         /// One click of the crown.
         case crownClick
+        /// The wearer tilted their head up far enough to wake the screen.
+        case headRaise
     }
     public var action: Action?
     public var battery: Int?
@@ -237,6 +239,7 @@ public struct GlassesReport: Equatable {
         guard let data = dict(dict(message.json["payload"])?["data"]), let extras = dict(data["extras"]) else { return nil }
         if extras["action_type"] as? String == "scroll" { action = .crownTurn }
         else if extras["event_name"] as? String == "KEY_PRESS" { action = .crownClick }
+        else if extras["trigger_source"] as? String == "raise_head", extras["screen_state"] as? String == "screen_on" { action = .headRaise }
         battery = Envelope.int(extras["battery_level"]) ?? Envelope.int(extras["bat"])
         if let level = battery, !(0...100).contains(level) { battery = nil }
         if action == nil, battery == nil { return nil }
