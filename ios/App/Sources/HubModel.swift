@@ -261,7 +261,7 @@ final class HubModel: ObservableObject {
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
         showMail = d.object(forKey: "showMail") as? Bool ?? !(d.string(forKey: "gmailClientID") ?? "").isEmpty
         // Anyone who already has the display set up doesn't need the first-run guide.
-        setupSeen = d.object(forKey: "setupSeen") as? Bool ?? (d.object(forKey: "crownPaging") != nil || d.object(forKey: "lookUp") != nil)
+        setupSeen = d.object(forKey: "setupSeen") != nil ? d.bool(forKey: "setupSeen") : (d.object(forKey: "crownPaging") != nil || d.object(forKey: "lookUp") != nil)
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
         scoresView = ScoresView(rawValue: d.string(forKey: "scoresView") ?? "") ?? .auto
         pinnedGame = d.string(forKey: "pinnedGame") ?? ""

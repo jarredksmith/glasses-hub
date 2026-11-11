@@ -1,0 +1,66 @@
+# Runs the Glasses Hub iPhone app in the iOS Simulator on a GitHub Mac and saves a screenshot of
+# each tab and of the first-run setup guide. Download them from the run's "screenshots" artifact.
+name: App screenshots
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ios-app]
+    paths:
+      - .github/workflows/screenshots.yml
+
+jobs:
+  shots:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Use the newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XC" ]; then sudo xcode-select -s "$XC/Contents/Developer"; fi
+          xcodebuild -version
+
+      - name: Build for the simulator
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          set +e
+          xcodebuild -project GlassesHub.xcodeproj -scheme GlassesHub -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/dd" CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/build.log" 2>&1
+          STATUS=$?
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)" "$RUNNER_TEMP/build.log" | sort -u | tail -n 40
+          exit $STATUS
+
+      - name: Take the screenshots
+        run: |
+          APP=$(find "$RUNNER_TEMP/dd/Build/Products" -name "GlassesHub.app" -maxdepth 2 | head -1)
+          UDID=$(xcrun simctl list devices available | grep -E "iPhone [0-9]+ Pro \(" | tail -1 | grep -oE "[0-9A-F-]{36}")
+          [ -n "$UDID" ] || UDID=$(xcrun simctl list devices available | grep -E "iPhone" | tail -1 | grep -oE "[0-9A-F-]{36}")
+          echo "App: $APP  Simulator: $UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 || true
+          xcrun simctl install "$UDID" "$APP"
+          mkdir -p shots
+          shot() {   # name, then launch arguments
+            NAME=$1; shift
+            xcrun simctl terminate "$UDID" com.jarredsmith.glasseshub 2>/dev/null || true
+            xcrun simctl launch "$UDID" com.jarredsmith.glasseshub "$@"
+            sleep 8
+            xcrun simctl io "$UDID" screenshot "shots/$NAME.png"
+          }
+          shot 1-setup    -setupSeen NO  -startTab 0
+          shot 2-display  -setupSeen YES -startTab 0
+          shot 3-apps     -setupSeen YES -startTab 1
+          shot 4-pc       -setupSeen YES -startTab 2
+          shot 5-settings -setupSeen YES -startTab 3
+          ls -la shots
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: shots

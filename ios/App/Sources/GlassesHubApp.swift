@@ -44,12 +44,15 @@ struct GlassesHubApp: App {
 
 struct RootView: View {
     @EnvironmentObject private var model: HubModel
+    /// The tab to open on. Normally the first; a "-startTab N" launch argument picks another (used
+    /// when taking screenshots).
+    @State private var tab = UserDefaults.standard.integer(forKey: "startTab")
     var body: some View {
-        TabView {
-            DisplayView().tabItem { Label("Display", systemImage: "eyeglasses") }
-            AppsView().tabItem { Label("Apps", systemImage: "square.grid.2x2") }
-            PCView().tabItem { Label("PC", systemImage: "desktopcomputer") }
-            SettingsView().tabItem { Label("Settings", systemImage: "gearshape") }
+        TabView(selection: $tab) {
+            DisplayView().tabItem { Label("Display", systemImage: "eyeglasses") }.tag(0)
+            AppsView().tabItem { Label("Apps", systemImage: "square.grid.2x2") }.tag(1)
+            PCView().tabItem { Label("PC", systemImage: "desktopcomputer") }.tag(2)
+            SettingsView().tabItem { Label("Settings", systemImage: "gearshape") }.tag(3)
         }
         .sheet(isPresented: Binding(get: { !model.setupSeen }, set: { if !$0 { model.setupSeen = true } })) { SetupView() }
     }
