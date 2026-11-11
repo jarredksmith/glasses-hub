@@ -451,6 +451,7 @@ final class HubModel: ObservableObject {
     /// message); "select" opens what's showing if it can be opened, goes back if something is open, and
     /// otherwise brings up the menu of apps. Lists end in a stop that also leads to the menu.
     func input(_ what: Input) {
+        link.record("Input \(what) on \(program.rawValue)" + (menuOpen ? ", menu open" : "") + (listEnd ? ", at list end" : ""))
         if what == .previous { goBack(); return }
         let next = what == .next
         if menuOpen {

@@ -109,6 +109,9 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     }
 
     func clearLog() { log.removeAll() }
+    /// Add a line to the connection log from outside (navigation steps, so a log shows what the app did
+    /// with each crown report).
+    func record(_ line: String) { note(line) }
 
     // MARK: Attaching
 
