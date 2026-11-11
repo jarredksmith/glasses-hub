@@ -122,9 +122,16 @@ public enum Metronome {
         }
     }
 
-    public static func card(bpm: Int, beats: Int, running: Bool, screen: Screen) -> Card {
-        Card(["Metronome", "\(bpm) BPM   \(beats)/4", tempoName(bpm), running ? "● Playing on your phone" : "Stopped",
-              "Turn: tempo   Look up: " + (running ? "stop" : "start")])
+    /// `beat` (0-based) is set when the glasses are following the beat: the screen is then kept to two
+    /// short lines so it can be redrawn on every beat.
+    public static func card(bpm: Int, beats: Int, running: Bool, beat: Int? = nil, screen: Screen) -> Card {
+        if running, let beat {
+            var dots = ""
+            for i in 0..<max(1, beats) { dots += i == beat ? "●" : "○" }
+            return Card(["\(bpm) BPM   \(beat + 1)", dots])
+        }
+        return Card(["Metronome", "\(bpm) BPM   \(beats)/4", tempoName(bpm), running ? "● Playing on your phone" : "Stopped",
+                     "Turn: tempo   Look up: " + (running ? "stop" : "start")])
     }
 }
 

@@ -97,6 +97,10 @@ struct ProgramSettings: View {
                 Stepper("\(model.metroBPM) BPM  (\(Metronome.tempoName(model.metroBPM)))", value: $model.metroBPM, in: Metronome.range, step: 1)
                 Picker("Beats in a bar", selection: $model.metroBeats) { ForEach([2, 3, 4, 6], id: \.self) { Text("\($0)").tag($0) } }
                 Button(model.metroOn ? "Stop" : "Start") { model.toggleMetronome() }
+                Toggle("Show the beat on the glasses (experimental)", isOn: $model.metroVisual)
+                if model.metroVisual {
+                    Stepper("Send each beat \(model.metroLeadMs) ms early", value: $model.metroLeadMs, in: 0...500, step: 25)
+                }
             } footer: {
                 Text("The clicks come from your phone, so turn its volume up. On the glasses: turn the crown to change the tempo, look up to start or stop.")
             }

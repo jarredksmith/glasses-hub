@@ -111,8 +111,14 @@ final class HubModel: ObservableObject {
     @Published var showMail: Bool { didSet { defaults.set(showMail, forKey: "showMail") } }
     // Tools
     private let sound = ToolSound()
-    @Published var metroBPM: Int { didSet { defaults.set(metroBPM, forKey: "metroBPM"); if metroOn { sound.startMetronome(bpm: metroBPM, beats: metroBeats) } } }
-    @Published var metroBeats: Int { didSet { defaults.set(metroBeats, forKey: "metroBeats"); if metroOn { sound.startMetronome(bpm: metroBPM, beats: metroBeats) } } }
+    @Published var metroBPM: Int { didSet { defaults.set(metroBPM, forKey: "metroBPM"); if metroOn { sound.startMetronome(bpm: metroBPM, beats: metroBeats); restartBeat() } } }
+    @Published var metroBeats: Int { didSet { defaults.set(metroBeats, forKey: "metroBeats"); if metroOn { sound.startMetronome(bpm: metroBPM, beats: metroBeats); restartBeat() } } }
+    /// Experiment: redraw the glasses on every beat. How well it keeps time depends on the Bluetooth link.
+    @Published var metroVisual: Bool { didSet { defaults.set(metroVisual, forKey: "metroVisual"); restartBeat() } }
+    /// How early each beat's screen is sent, to make up for the time it takes to reach the glasses.
+    @Published var metroLeadMs: Int { didSet { defaults.set(metroLeadMs, forKey: "metroLeadMs"); restartBeat() } }
+    @Published private(set) var metroBeat = 0
+    private var beatTimer: Timer?
     @Published private(set) var metroOn = false
     @Published private(set) var tunerOn = false
     @Published private(set) var tunerReading: TunerReading?
@@ -308,6 +314,8 @@ final class HubModel: ObservableObject {
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
         metroBPM = d.object(forKey: "metroBPM") as? Int ?? 100
         metroBeats = d.object(forKey: "metroBeats") as? Int ?? 4
+        metroVisual = d.object(forKey: "metroVisual") as? Bool ?? true
+        metroLeadMs = d.object(forKey: "metroLeadMs") as? Int ?? 150
         speedWPM = d.object(forKey: "speedWPM") as? Int ?? 200
         speedChunk = d.object(forKey: "speedChunk") as? Int ?? 2
         pickerMode = PickerMode(rawValue: d.string(forKey: "pickerMode") ?? "") ?? .coin
@@ -477,7 +485,8 @@ final class HubModel: ObservableObject {
         }
 
         // Speed read moves on by the clock, and is the one app that sends screens faster than once a second.
-        link.pace = program == .speed && speedPlaying && !menuOpen ? SpeedRead.interval(wpm: speedWPM, chunk: speedChunk) : 1.0
+        if program == .metronome, metroOn, metroVisual, !menuOpen { link.pace = max(0.25, 60.0 / Double(max(1, metroBPM)) * 0.6) }
+        else { link.pace = program == .speed && speedPlaying && !menuOpen ? SpeedRead.interval(wpm: speedWPM, chunk: speedChunk) : 1.0 }
         if program == .speed, speedPlaying, !menuOpen {
             let words = speedText()
             let step = SpeedRead.interval(wpm: speedWPM, chunk: speedChunk)
@@ -674,6 +683,27 @@ final class HubModel: ObservableObject {
     func toggleMetronome() {
         if metroOn { sound.stopMetronome() } else { sound.startMetronome(bpm: metroBPM, beats: metroBeats) }
         metroOn = sound.metronomeOn
+        restartBeat()
+    }
+
+    /// Lines the beat counter up with the clicks, which have just (re)started from beat one.
+    private func restartBeat() {
+        beatTimer?.invalidate(); beatTimer = nil
+        metroBeat = 0
+        guard metroOn, metroVisual else { return }
+        let interval = 60.0 / Double(max(1, metroBPM))
+        let first = Date().addingTimeInterval(max(0.01, interval - Double(metroLeadMs) / 1000))
+        let made = Timer(fire: first, interval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.beat() }
+        }
+        RunLoop.main.add(made, forMode: .common)
+        beatTimer = made
+    }
+
+    private func beat() {
+        guard metroOn else { return }
+        metroBeat = (metroBeat + 1) % max(1, metroBeats)
+        tick()                                      // send this beat's screen now, not on the next quarter second
     }
 
     func toggleTuner() {
@@ -713,7 +743,7 @@ final class HubModel: ObservableObject {
     }
 
     private func stopTools() {
-        if metroOn { sound.stopMetronome(); metroOn = false }
+        if metroOn { sound.stopMetronome(); metroOn = false; restartBeat() }
         if tunerOn { sound.stopListening(); tunerOn = false; tunerReading = nil }
         speedPlaying = false
     }
@@ -900,7 +930,7 @@ final class HubModel: ObservableObject {
         case .speed:
             return SpeedRead.card(words: speedText(), index: speedIndex, size: speedChunk, playing: speedPlaying, wpm: speedWPM, screen: screen)
         case .metronome:
-            return Metronome.card(bpm: metroBPM, beats: metroBeats, running: metroOn, screen: screen)
+            return Metronome.card(bpm: metroBPM, beats: metroBeats, running: metroOn, beat: metroVisual ? metroBeat : nil, screen: screen)
         case .tuner:
             if !tunerNote.isEmpty { return Card(["Tuner"] + TextLayout.wrap(tunerNote, width: screen.columns)) }
             return Tuner.card(tunerReading, listening: tunerOn, screen: screen, glyphs: glyphs)

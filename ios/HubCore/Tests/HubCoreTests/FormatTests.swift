@@ -390,6 +390,9 @@ final class ToolsTests: XCTestCase {
         XCTAssertNotEqual(bar[1], 0); XCTAssertEqual(bar[22049], 0, accuracy: 0.001)
         XCTAssertEqual(Metronome.bar(bpm: 999, beats: 1, sampleRate: 44100).count, 11025)
         XCTAssertEqual(Metronome.tempoName(120), "Allegro")
+        let screen = Screen(rows: 7, columns: 28, wideColumns: 14)
+        XCTAssertEqual(Metronome.card(bpm: 100, beats: 4, running: true, beat: 2, screen: screen).lines, ["100 BPM   3", "○○●○"])
+        XCTAssertEqual(Metronome.card(bpm: 100, beats: 4, running: false, beat: 2, screen: screen).lines.first, "Metronome")
     }
     func testPicker() {
         XCTAssertEqual(Picker.options(from: "Pizza, Tacos\n  Sushi \n"), ["Pizza", "Tacos", "Sushi"])
