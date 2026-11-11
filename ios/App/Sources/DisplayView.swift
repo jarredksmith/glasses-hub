@@ -17,6 +17,7 @@ struct DisplayView: View {
                     ProgramControls(program: model.program)
                     PageControls()
                     HStack {
+                        Button { model.input(.previous) } label: { Label("Back", systemImage: "arrow.counterclockwise") }
                         Button { model.input(.next) } label: { Label("Turn", systemImage: "arrow.clockwise") }
                         Button { model.input(.select) } label: { Label("Click", systemImage: "hand.tap") }
                         Spacer()

@@ -53,8 +53,10 @@ with the display on). If the display can't open, the alert goes out as a notific
   display font should carry. Settings has three levels (plain, symbols, symbols plus shaded bars) and a
   test that puts every character used on the glasses.
 - **The crown navigates.** The glasses' usage reports reach the phone about a second after a crown turn
-  or click (seen on Strix OS 1.0.6.11); they don't say which way the crown turned. So a turn is "next"
-  (page, headline, game, event, message) and a click is "select": open what's showing, go back if
+  or click (seen on Strix OS 1.0.6.11). A turn forward at the bottom of a page is reported as a scroll
+  that failed; a turn back as one that succeeded, provided there is something above to scroll to. So
+  every screen is sent with one line of scroll room above it, and forward is "next", back is "previous"
+  (page, headline, game, event, message). A click is "select": open what's showing, go back if
   something is open, otherwise bring up the on-glasses menu of apps. Lists end in a stop that also leads
   to the menu.
 - **Buttons turn pages.** With the display on, the phone's volume buttons (or a Bluetooth ring that sends

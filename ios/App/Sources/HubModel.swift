@@ -103,6 +103,10 @@ final class HubModel: ObservableObject {
     @Published var mailQuery: String { didSet { defaults.set(mailQuery, forKey: "mailQuery"); mailDue = .distantPast } }
     @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "headPaging") } }
     @Published var crownPaging: Bool { didSet { defaults.set(crownPaging, forKey: "crownPaging") } }
+    /// Turning the crown back selects, like a click. The glasses report a crown click only now and
+    /// then (one came through, then none for minutes), while every turn is reported, so the back turn
+    /// is the dependable way to select. It needs a line of scroll room above each screen.
+    @Published var crownBack: Bool { didSet { defaults.set(crownBack, forKey: "crownBackSelects") } }
     @Published var logEvents: Bool { didSet { defaults.set(logEvents, forKey: "logEvents"); link.logEvents = logEvents } }
     @Published var crownScroll: Bool { didSet { defaults.set(crownScroll, forKey: "crownScroll") } }
     @Published var scoresView: ScoresView { didSet { defaults.set(scoresView.rawValue, forKey: "scoresView") } }
@@ -191,6 +195,7 @@ final class HubModel: ObservableObject {
     private var watched = [String: Game]()
     private var pager = AutoPager()
     private var popupOpen = false
+    private var scrollingBlock = false
     private var sectionIndex = 0
     private var sectionKey = ""
     private var agendaStep = 0
@@ -232,6 +237,7 @@ final class HubModel: ObservableObject {
         volumePaging = bool("volumePaging", true)
         logEvents = bool("logEvents", false)
         crownPaging = bool("crownPaging", true)
+        crownBack = bool("crownBackSelects", true)
         headPaging = bool("headPaging", false)
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
@@ -272,7 +278,8 @@ final class HubModel: ObservableObject {
         mailSignedIn = google.signedIn
         link.onCrown = { [weak self] direction in
             guard let self, self.crownPaging, self.link.isShowing else { return }
-            self.input(direction > 0 ? .next : .select)
+            if direction == 0 { self.input(.select) }
+            else if !self.scrollingBlock { self.input(direction > 0 ? .next : .select) }   // in crown-scroll mode the crown just scrolls
         }
         link.onHeadRaise = { [weak self] in
             guard let self, self.headPaging, self.link.isShowing else { return }
@@ -427,15 +434,21 @@ final class HubModel: ObservableObject {
         let text = card.text(rows: screen.rows)
         if text != preview { preview = text }
         if card.scrolls != previewScrolls { previewScrolls = card.scrolls }
+        scrollingBlock = card.scrolls
         if link.isRunning {
-            link.show(text, scrolls: card.scrolls)
+            // Each screen goes up with a line of scroll room above it; that is what lets the glasses'
+            // reports tell a turn back (select) from a turn forward (next).
+            let room = crownPaging && crownBack && !card.scrolls
+            let sent = room
+                ? TextLayout.withScrollRoom(card.lines, rows: screen.rows, marker: glyphs.up + " select").joined(separator: "\n") : text
+            link.show(sent, scrolls: card.scrolls)
             link.tick()
         }
     }
 
     // MARK: Crown and button navigation
 
-    enum Input { case next, select }
+    enum Input { case next, previous, select }
 
     /// One step of navigation, from the crown (turn = next, click = select), the volume buttons (up = next,
     /// down = select) or the two buttons on the Display tab.
@@ -444,6 +457,8 @@ final class HubModel: ObservableObject {
     /// message); "select" opens what's showing if it can be opened, goes back if something is open, and
     /// otherwise brings up the menu of apps. Lists end in a stop that also leads to the menu.
     func input(_ what: Input) {
+        link.record("Input \(what) on \(program.rawValue)" + (menuOpen ? ", menu open" : "") + (listEnd ? ", at list end" : ""))
+        if what == .previous { goBack(); return }
         let next = what == .next
         if menuOpen {
             let all = Program.allCases
@@ -492,6 +507,34 @@ final class HubModel: ObservableObject {
             if !next { openMenu() } else if timer.isRunning { timerPause() } else { timerStart() }
         case .dashboard, .message:
             openMenu()
+        }
+    }
+
+    /// The crown turned backwards: the previous page, item or view. Never opens or closes anything.
+    private func goBack() {
+        if menuOpen { let n = Program.allCases.count; menuIndex = (menuIndex + n - 1) % n; return }
+        if listEnd { listEnd = false; return }                     // back from the end stop to the last item
+        let earlierPage = pageCount > 1 && pageIndex > 0
+        switch program {
+        case .news:
+            if reading != nil { if earlierPage { pageStep(-1) } }
+            else if newsIndex > 0 { newsIndex -= 1; headlineTurnedAt = Date() }
+        case .mail:
+            if mailOpen { if earlierPage { pageStep(-1) } } else if mailIndex > 0 { mailIndex -= 1 }
+        case .scores:
+            if scoresView == .league { if earlierPage { pageStep(-1) } }
+            else {
+                let list = Scoreboard.ordered(games, teams: followed)
+                if let at = list.firstIndex(where: { $0.id == game?.id }), at > 0 { pinnedGame = list[at - 1].id }
+            }
+        case .agenda:
+            if earlierPage { pageStep(-1) } else if agendaStep > 0 { agendaStep -= 1; pageRestart() }
+        case .weather:
+            weatherStep = max(0, (weatherStep ?? 0) + 2)             // three views: two forward is one back
+        case .facts, .reader:
+            if earlierPage { pageStep(-1) }
+        case .trivia, .timer, .dashboard, .message:
+            break
         }
     }
 
