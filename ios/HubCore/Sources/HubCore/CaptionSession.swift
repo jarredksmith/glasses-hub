@@ -51,7 +51,8 @@ public struct CaptionSession {
     /// Experiment: send text as original plus translation under this mode number (0 = off).
     public var translationMode = 0
     private var stopQueued = false
-    private enum BusyWrite { case configure, text, stop }
+    private enum BusyWrite { case configure, text, stop, renewStop }
+    private var renewAt: TimeInterval?
 
     public init(fontSize: Int = 1, maxLines: Int = 7, sequenceStart: UInt16? = nil) {
         let font = min(2, max(1, fontSize))
@@ -101,6 +102,8 @@ public struct CaptionSession {
             if phase == .configuring { phase = .active; textAllowedAt = now + 1.0 }
         case .text:
             guard ok else { return close("A screen update failed to send.") }
+        case .renewStop:
+            renewAt = now + 0.9
         case .stop:
             return close(ok ? "Display closed." : "The close request failed to send. Hold the crown to leave the page.")
         }
@@ -137,6 +140,11 @@ public struct CaptionSession {
             default: break
             }
         }
+        if let at = renewAt, now >= at, busy == nil, phase == .configuring {
+            renewAt = nil
+            busy = .configure; busySince = now
+            return [.write(packet(CaptionWire.configure(sid: sid, fontSize: fontSize, maxLines: maxLines)), text: false)]
+        }
         if busy != nil, now - busySince > 6 {
             busy = nil
             return close("A write to the glasses timed out.")
@@ -159,13 +167,18 @@ public struct CaptionSession {
     /// keeps clicks coming. `closeFirst` closes the old page before opening the new one.
     public mutating func renew(now: TimeInterval, closeFirst: Bool) -> [Action] {
         guard phase == .active, busy == nil else { return [] }
-        var actions: [Action] = []
-        if closeFirst { actions.append(.write(packet(CaptionWire.stop(sid: sid)), text: false)) }
+        let old = sid
         sid = CaptionWire.newSessionID()
-        phase = .configuring; busy = .configure; busySince = now
+        phase = .configuring; busySince = now
         lastSentFrame = nil; textAllowedAt = .infinity
-        actions.append(.write(packet(CaptionWire.configure(sid: sid, fontSize: fontSize, maxLines: maxLines)), text: false))
-        return actions
+        if closeFirst {
+            // Close the old page, give the glasses a moment to really leave it, then open the new one
+            // (from `tick`). Sent back to back, the glasses never left the page.
+            busy = .renewStop
+            return [.write(packet(CaptionWire.stop(sid: old)), text: false)]
+        }
+        busy = .configure
+        return [.write(packet(CaptionWire.configure(sid: sid, fontSize: fontSize, maxLines: maxLines)), text: false)]
     }
 
     /// Close this session's page. Safe to call at any point.

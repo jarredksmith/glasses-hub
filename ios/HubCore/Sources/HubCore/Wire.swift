@@ -231,6 +231,7 @@ public struct GlassesReport: Equatable {
         case headRaise
         /// The wearer held the crown and the glasses left the caption page.
         case holdExit
+        case doubleClick
     }
     public var action: Action?
     public var battery: Int?
@@ -254,6 +255,9 @@ public struct GlassesReport: Equatable {
         // A look up while the caption page is showing, reported every time (as "fail" with plain
         // captions, "success" with translation captions).
         else if extras["action_type"] as? String == "raise_head" { action = .headRaise }
+        // A crown double click. With the double-click shortcut set to "None" in the RayNeo app it does
+        // nothing on the glasses, and they still report every one.
+        else if extras["trigger_action"] as? String == "double_click" { action = .doubleClick }
         else if extras["event_name"] as? String == "KEY_PRESS" { action = .crownClick }
         else if extras["exit_type"] as? String == "crown_long_press" { action = .holdExit }
         else if extras["trigger_source"] as? String == "raise_head", extras["screen_state"] as? String == "screen_on" { action = .headRaise }

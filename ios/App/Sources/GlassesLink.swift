@@ -308,12 +308,16 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
                             if !actions.isEmpty { note(rearm == 2 ? "Reopening the page so the next click counts." : "New page session so the next click counts.") }
                             perform(actions)
                         }
+                    case .doubleClick:
+                        note("Crown double click.")
+                        onCrown?(0)
                     case .holdExit:
                         note("Crown held: the glasses left the page.")
                         if onHoldExit?() == true { reopen() }
                         else { userStopped = false; release("The caption page was closed on the glasses.") }
                     case .headRaise:
-                        if Date().timeIntervalSince(lastRaise) > 1.5 { onHeadRaise?() }
+                        // looking back down is reported as a second raise a couple of seconds later
+                        if Date().timeIntervalSince(lastRaise) > 3.5 { onHeadRaise?() }
                         lastRaise = Date()
                     }
                 }
