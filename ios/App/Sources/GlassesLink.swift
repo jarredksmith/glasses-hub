@@ -24,6 +24,9 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     @Published private(set) var battery: Int?
     /// The crown was turned forward (+1), turned back (-1) or clicked (0) while this app's page was up.
     var onCrown: ((Int) -> Void)?
+    /// The wearer held the crown, which makes the glasses leave the page. Return true to reopen it.
+    var onHoldExit: (() -> Bool)?
+    var translationMode = 0
     private var lastDepth = 0
     private var lastBack = Date.distantPast
     /// The wearer tilted their head up while this app's page was up.
@@ -66,6 +69,7 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
         session = CaptionSession(fontSize: size.fontSize, maxLines: size.rows)
         session.refreshInterval = refresh ? 30 : nil
         session.finishScrollingText = finishScrollingText
+        session.translationMode = translationMode
         decoder = FrameStreamDecoder()
         rows = size.rows; framesSent = 0; eventsLogged = 0
         userStopped = false; wantsStart = true; run += 1
@@ -90,6 +94,20 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
         }
         state = .closing; status = "Closing the display…"
         perform(session.stop(now: now))
+    }
+
+    /// Open the caption page again on the connection we already have (after the glasses closed it).
+    private func reopen() {
+        guard let peripheral, peripheral.state == .connected, incoming != nil else { return }
+        let old = session
+        session = CaptionSession(fontSize: old.fontSize, maxLines: old.maxLines)
+        session.refreshInterval = old.refreshInterval
+        session.finishScrollingText = old.finishScrollingText
+        session.translationMode = translationMode
+        state = .opening; status = "Opening the display…"
+        note("Opening the page again.")
+        _ = session.start(now: now)
+        perform(session.subscribed(now: now))
     }
 
     /// The text to keep on the glasses. Sent on the next tick the session allows.
@@ -280,6 +298,10 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
                         }
                         lastDepth = depth
                     case .crownClick: note("Crown click."); onCrown?(0)
+                    case .holdExit:
+                        note("Crown held: the glasses left the page.")
+                        if onHoldExit?() == true { reopen() }
+                        else { userStopped = false; release("The caption page was closed on the glasses.") }
                     case .headRaise:
                         if Date().timeIntervalSince(lastRaise) > 1.5 { onHeadRaise?() }
                         lastRaise = Date()

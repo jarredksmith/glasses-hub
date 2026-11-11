@@ -109,6 +109,10 @@ final class HubModel: ObservableObject {
     @Published var crownBack: Bool { didSet { defaults.set(crownBack, forKey: "crownBackSelects") } }
     @Published var logEvents: Bool { didSet { defaults.set(logEvents, forKey: "logEvents"); link.logEvents = logEvents } }
     @Published var crownScroll: Bool { didSet { defaults.set(crownScroll, forKey: "crownScroll") } }
+    /// Holding the crown (which makes the glasses leave the page) counts as select; the page reopens.
+    @Published var holdSelects: Bool { didSet { defaults.set(holdSelects, forKey: "holdSelects") } }
+    /// Experiment for finding a click the glasses report every time. 0 = off.
+    @Published var translationMode: Int { didSet { defaults.set(translationMode, forKey: "translationMode"); link.translationMode = translationMode } }
     @Published var scoresView: ScoresView { didSet { defaults.set(scoresView.rawValue, forKey: "scoresView") } }
     @Published var pinnedGame: String { didSet { defaults.set(pinnedGame, forKey: "pinnedGame"); repick() } }
     @Published var weatherView: WeatherView { didSet { defaults.set(weatherView.rawValue, forKey: "weatherView") } }
@@ -234,6 +238,9 @@ final class HubModel: ObservableObject {
         glyphStyle = GlyphStyle(rawValue: d.string(forKey: "glyphStyle") ?? "") ?? .symbols
         pageSeconds = number("pageSeconds", 12)
         crownScroll = bool("crownScroll", false)
+        holdSelects = bool("holdSelects", false)
+        translationMode = defaults.integer(forKey: "translationMode")
+        link.translationMode = translationMode
         volumePaging = bool("volumePaging", true)
         logEvents = bool("logEvents", false)
         crownPaging = bool("crownPaging", true)
@@ -276,6 +283,11 @@ final class HubModel: ObservableObject {
         calendarAllowed = calendar.allowed
         link.logEvents = logEvents
         mailSignedIn = google.signedIn
+        link.onHoldExit = { [weak self] in
+            guard let self, self.holdSelects else { return false }
+            self.input(.select)
+            return true
+        }
         link.onCrown = { [weak self] direction in
             guard let self, self.crownPaging, self.link.isShowing else { return }
             if direction == 0 { self.input(.select) }

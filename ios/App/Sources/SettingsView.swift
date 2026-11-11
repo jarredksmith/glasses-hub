@@ -35,6 +35,13 @@ struct SettingsView: View {
                     Stepper(model.pageSeconds == 0 ? "Pages turn only when I press a button" : "Turn the page every \(Int(model.pageSeconds)) seconds",
                             value: $model.pageSeconds, in: 0...60, step: 2)
                     Toggle("Navigate with the crown", isOn: $model.crownPaging)
+                    Toggle("Hold the crown to select (page reopens)", isOn: $model.holdSelects)
+                    Picker("Click experiment", selection: $model.translationMode) {
+                        Text("Off").tag(0)
+                        Text("Translation mode 1").tag(1)
+                        Text("Translation mode 2").tag(2)
+                        Text("Translation mode 3").tag(3)
+                    }
                     Toggle("Navigate with the volume buttons", isOn: $model.volumePaging)
                     Toggle("Tilt my head up for \"next\" (experimental)", isOn: $model.headPaging)
                     Toggle("Let the crown scroll long text instead (experimental)", isOn: $model.crownScroll)

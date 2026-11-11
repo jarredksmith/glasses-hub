@@ -48,6 +48,8 @@ public struct CaptionSession {
     private var wanted: String?
     private var wantedScrolls = false
     private var wantedFinished = false
+    /// Experiment: send text as original plus translation under this mode number (0 = off).
+    public var translationMode = 0
     private var stopQueued = false
     private enum BusyWrite { case configure, text, stop }
 
@@ -149,7 +151,7 @@ public struct CaptionSession {
             return [.log("Skipped a screen that was too long to send.")]
         }
         busy = .text; busySince = now; lastTextAt = now; lastSentFrame = wanted; framesSent += 1
-        return [.write(packet(CaptionWire.text(sid: sid, frame: wanted, finished: wantedFinished || (wantedScrolls && finishScrollingText))), text: true)]
+        return [.write(packet(CaptionWire.text(sid: sid, frame: wanted, finished: wantedFinished || (wantedScrolls && finishScrollingText), translationMode: translationMode)), text: true)]
     }
 
     /// Close this session's page. Safe to call at any point.

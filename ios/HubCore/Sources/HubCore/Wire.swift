@@ -199,9 +199,15 @@ public enum CaptionWire {
     /// `status` 0 marks the text as still changing, which is what makes the next one replace it in place.
     /// `finished` marks it as done instead, an experiment for long text: the page may then stop jumping
     /// back to the end while the wearer scrolls.
-    public static func text(sid: String, frame: String, finished: Bool = false) -> Data {
-        Envelope.encode(type: textType, json: [
-            "sid": sid, "mode": 3, "status": finished ? 1 : 0, "content": ["source_transcript": frame],
+    /// `translationMode` is an experiment: 0 sends plain text as usual; 1, 2 or 3 send the same text as
+    /// both the original and its "translation" under that mode number. The official app's translation
+    /// captions let the crown swap original and translation, so a click may then do something the
+    /// glasses report every time.
+    public static func text(sid: String, frame: String, finished: Bool = false, translationMode: Int = 0) -> Data {
+        var content: [String: Any] = ["source_transcript": frame]
+        if translationMode > 0 { content["target_translation"] = frame }
+        return Envelope.encode(type: textType, json: [
+            "sid": sid, "mode": translationMode > 0 ? translationMode : 3, "status": finished ? 1 : 0, "content": content,
         ])
     }
 
@@ -223,6 +229,8 @@ public struct GlassesReport: Equatable {
         case crownClick
         /// The wearer tilted their head up far enough to wake the screen.
         case headRaise
+        /// The wearer held the crown and the glasses left the caption page.
+        case holdExit
     }
     public var action: Action?
     public var battery: Int?
@@ -244,6 +252,7 @@ public struct GlassesReport: Equatable {
             action = extras["action_result"] as? String == "success" && depth > 0 ? .crownBack(depth: depth) : .crownTurn
         }
         else if extras["event_name"] as? String == "KEY_PRESS" { action = .crownClick }
+        else if extras["exit_type"] as? String == "crown_long_press" { action = .holdExit }
         else if extras["trigger_source"] as? String == "raise_head", extras["screen_state"] as? String == "screen_on" { action = .headRaise }
         battery = Envelope.int(extras["battery_level"]) ?? Envelope.int(extras["bat"])
         if let level = battery, !(0...100).contains(level) { battery = nil }
