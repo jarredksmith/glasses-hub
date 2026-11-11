@@ -6,6 +6,7 @@ import HubCore
 /// What can be on the glasses.
 enum Program: String, CaseIterable, Identifiable {
     case dashboard, scores, news, mail, agenda, weather, trivia, facts, timer, reader, message
+    case speed, metronome, tuner, picker
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -13,6 +14,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .facts: return "Odd facts"; case .timer: return "Timer"; case .weather: return "Weather"
         case .agenda: return "Calendar"; case .reader: return "Reader"; case .message: return "Message"
         case .news: return "News"; case .mail: return "Mail"
+        case .speed: return "Speed read"; case .metronome: return "Metronome"; case .tuner: return "Tuner"; case .picker: return "Dice & coin"
         }
     }
     var icon: String {
@@ -21,6 +23,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .facts: return "lightbulb"; case .timer: return "timer"; case .weather: return "cloud.sun"
         case .agenda: return "calendar"; case .reader: return "text.alignleft"; case .message: return "text.bubble"
         case .news: return "newspaper"; case .mail: return "envelope"
+        case .speed: return "bolt.horizontal"; case .metronome: return "metronome"; case .tuner: return "tuningfork"; case .picker: return "dice"
         }
     }
     var blurb: String {
@@ -36,6 +39,10 @@ enum Program: String, CaseIterable, Identifiable {
         case .agenda: return "Today's events, or the month as a grid."
         case .reader: return "Paste any text and read it a page at a time."
         case .message: return "Put a line of text on the glasses and leave it there."
+        case .speed: return "The Reader's text a few words at a time, in one spot."
+        case .metronome: return "Clicks from your phone; set the tempo with the crown."
+        case .tuner: return "Play a note near your phone and see how far off it is."
+        case .picker: return "Flip a coin, roll dice, or pick from your own list."
         }
     }
 }
@@ -102,8 +109,42 @@ final class HubModel: ObservableObject {
     @Published var gmailClientID: String { didSet { defaults.set(gmailClientID, forKey: "gmailClientID") } }
     /// Mail needs the owner's own Google sign-in set-up, so it stays hidden unless switched on.
     @Published var showMail: Bool { didSet { defaults.set(showMail, forKey: "showMail") } }
+    // Tools
+    private let sound = ToolSound()
+    @Published var metroBPM: Int { didSet { defaults.set(metroBPM, forKey: "metroBPM"); if metroOn { sound.startMetronome(bpm: metroBPM, beats: metroBeats) } } }
+    @Published var metroBeats: Int { didSet { defaults.set(metroBeats, forKey: "metroBeats"); if metroOn { sound.startMetronome(bpm: metroBPM, beats: metroBeats) } } }
+    @Published private(set) var metroOn = false
+    @Published private(set) var tunerOn = false
+    @Published private(set) var tunerReading: TunerReading?
+    @Published private(set) var tunerNote = ""
+    private var tunerHeardAt = Date.distantPast
+    @Published var speedWPM: Int { didSet { defaults.set(speedWPM, forKey: "speedWPM"); speedAnchor() } }
+    @Published var speedChunk: Int { didSet { defaults.set(speedChunk, forKey: "speedChunk"); speedAnchor() } }
+    @Published private(set) var speedPlaying = false
+    @Published private(set) var speedIndex = 0
+    private var speedWords: (key: Int, words: [String]) = (0, [])
+    private var speedShownAt = Date.distantPast
+    @Published var pickerMode: PickerMode { didSet { defaults.set(pickerMode.rawValue, forKey: "pickerMode") } }
+    @Published var pickerOptions: String { didSet { defaults.set(pickerOptions, forKey: "pickerOptions") } }
+    @Published private(set) var pickerResult: PickerResult?
+    private var pickerRolledAt = Date.distantPast
+
+    /// The menu on the glasses: the dashboard, then groups of apps.
+    struct MenuGroup: Identifiable { let title: String; let items: [Program]; var id: String { title } }
+    var menuGroups: [MenuGroup] {
+        [MenuGroup(title: "Info", items: [.scores, .news, .mail, .agenda, .weather].filter { $0 != .mail || showMail }),
+         MenuGroup(title: "Reading", items: [.reader, .speed, .message]),
+         MenuGroup(title: "Tools", items: [.timer, .metronome, .tuner, .picker]),
+         MenuGroup(title: "Fun", items: [.trivia, .facts])]
+    }
+    @Published private(set) var menuGroup: Int?
+    private var menuTitles: [String] {
+        if let g = menuGroup, menuGroups.indices.contains(g) { return ["< Back"] + menuGroups[g].items.map(\.title) }
+        return [Program.dashboard.title] + menuGroups.map { $0.title + " >" }
+    }
+
     /// The apps on offer, on the phone and in the glasses' menu.
-    var apps: [Program] { Program.allCases.filter { $0 != .mail || showMail } }
+    var apps: [Program] { [.dashboard] + menuGroups.flatMap(\.items) }
     @Published var setupSeen: Bool { didSet { defaults.set(setupSeen, forKey: "setupSeen") } }
     @Published var mailQuery: String { didSet { defaults.set(mailQuery, forKey: "mailQuery"); mailDue = .distantPast } }
     @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "lookUp") } }
@@ -151,6 +192,12 @@ final class HubModel: ObservableObject {
     @Published var celsius: Bool { didSet { defaults.set(celsius, forKey: "celsius"); weatherDue = .distantPast } }
 
     @Published var dashScores: Bool { didSet { defaults.set(dashScores, forKey: "dashScores") } }
+    /// The dashboard goes blank after a while and comes back when the wearer looks up (or uses the crown).
+    @Published var dashSleep: Bool { didSet { defaults.set(dashSleep, forKey: "dashSleep"); wakeDashboard() } }
+    @Published var dashSleepSeconds: Int { didSet { defaults.set(dashSleepSeconds, forKey: "dashSleepSeconds"); wakeDashboard() } }
+    private var dashAwakeUntil = Date.distantFuture
+    private var dashAsleep: Bool { dashSleep && program == .dashboard && !menuOpen && Date() > dashAwakeUntil }
+    private func wakeDashboard() { dashAwakeUntil = Date().addingTimeInterval(Double(max(5, dashSleepSeconds))) }
     @Published var dashWeather: Bool { didSet { defaults.set(dashWeather, forKey: "dashWeather") } }
     @Published var dashAgenda: Bool { didSet { defaults.set(dashAgenda, forKey: "dashAgenda") } }
     @Published var dashNews: Bool { didSet { defaults.set(dashNews, forKey: "dashNews") } }
@@ -259,6 +306,12 @@ final class HubModel: ObservableObject {
         headAction = defaults.object(forKey: "headAction") as? Int ?? 1
         doubleClickAction = defaults.object(forKey: "doubleClickAction") as? Int ?? 2
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
+        metroBPM = d.object(forKey: "metroBPM") as? Int ?? 100
+        metroBeats = d.object(forKey: "metroBeats") as? Int ?? 4
+        speedWPM = d.object(forKey: "speedWPM") as? Int ?? 200
+        speedChunk = d.object(forKey: "speedChunk") as? Int ?? 2
+        pickerMode = PickerMode(rawValue: d.string(forKey: "pickerMode") ?? "") ?? .coin
+        pickerOptions = d.string(forKey: "pickerOptions") ?? "Pizza\nTacos\nSushi\nBurgers"
         showMail = d.object(forKey: "showMail") as? Bool ?? !(d.string(forKey: "gmailClientID") ?? "").isEmpty
         // Anyone who already has the display set up doesn't need the first-run guide.
         setupSeen = d.object(forKey: "setupSeen") != nil ? d.bool(forKey: "setupSeen") : (d.object(forKey: "crownPaging") != nil || d.object(forKey: "lookUp") != nil)
@@ -284,6 +337,8 @@ final class HubModel: ObservableObject {
         city = d.string(forKey: "city") ?? "Oklahoma City"
         celsius = bool("celsius", false)
         dashScores = bool("dashScores", true)
+        dashSleep = bool("dashSleep", false)
+        dashSleepSeconds = d.object(forKey: "dashSleepSeconds") as? Int ?? 20
         dashWeather = bool("dashWeather", true)
         dashAgenda = bool("dashAgenda", true)
         dashNews = bool("dashNews", false)
@@ -300,6 +355,7 @@ final class HubModel: ObservableObject {
         mailSignedIn = google.signedIn
         link.translationMode = translationMode
         link.rearm = clickRearm
+        sound.onPitch = { [weak self] hz in self?.heard(hz) }
         link.onHoldExit = { [weak self] in
             guard let self, self.holdSelects else { return false }
             self.input(.select)
@@ -315,7 +371,9 @@ final class HubModel: ObservableObject {
             else if !self.scrollingBlock { self.input(direction > 0 ? .next : .previous) }   // in crown-scroll mode the crown just scrolls
         }
         link.onHeadRaise = { [weak self] in
-            guard let self, self.headPaging, self.link.isShowing else { return }
+            guard let self, self.link.isShowing else { return }
+            if self.dashAsleep { self.link.record("Look up: dashboard back on."); self.wakeDashboard(); return }
+            guard self.headPaging else { return }
             self.link.record("Look up.")
             self.gesture(self.headAction)
         }
@@ -328,7 +386,7 @@ final class HubModel: ObservableObject {
         link.onEnded = { [weak self] reason in self?.displayEnded(reason) }
         pc.onNote = { [weak self] note in self?.received(note) }
         Notifier.shared.setUp()
-        let made = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+        let made = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
         RunLoop.main.add(made, forMode: .common)
@@ -348,6 +406,7 @@ final class HubModel: ObservableObject {
     // MARK: Display controls
 
     func startDisplay() {
+        wakeDashboard()
         endedNotice = nil
         link.start(size: textSize, refresh: refreshScreen, finishScrollingText: crownScroll)
         applyKeepAwake()
@@ -395,7 +454,9 @@ final class HubModel: ObservableObject {
     }
 
     private func programChanged() {
+        wakeDashboard()
         overlays.clear()
+        stopTools()
         if program == .facts { factDue = .distantPast }
         if program == .agenda || program == .dashboard { agendaDue = .distantPast }
         pager = AutoPager(); pagesPaused = false
@@ -413,6 +474,18 @@ final class HubModel: ObservableObject {
         if popUps, !link.isRunning, !overlays.isEmpty {
             popupOpen = true
             link.start(size: textSize, refresh: refreshScreen, finishScrollingText: crownScroll)
+        }
+
+        // Speed read moves on by the clock, and is the one app that sends screens faster than once a second.
+        link.pace = program == .speed && speedPlaying && !menuOpen ? SpeedRead.interval(wpm: speedWPM, chunk: speedChunk) : 1.0
+        if program == .speed, speedPlaying, !menuOpen {
+            let words = speedText()
+            let step = SpeedRead.interval(wpm: speedWPM, chunk: speedChunk)
+            if now.timeIntervalSince(speedShownAt) >= step {
+                speedIndex = min(words.count, speedIndex + max(1, SpeedRead.chunk(words, at: speedIndex, size: speedChunk, width: screen.columns).count))
+                speedShownAt = now
+                if speedIndex >= words.count { speedPlaying = false }
+            }
         }
 
         // Trivia and the timer move on their own.
@@ -492,11 +565,13 @@ final class HubModel: ObservableObject {
     /// otherwise brings up the menu of apps. Lists end in a stop that also leads to the menu.
     func input(_ what: Input) {
         link.record("Input \(what) on \(program.rawValue)" + (menuOpen ? ", menu open" : "") + (listEnd ? ", at list end" : ""))
+        if dashAsleep { wakeDashboard(); return }           // the first touch only brings the dashboard back
+        wakeDashboard()
+        if !menuOpen, !listEnd, toolInput(what) { return }
         if what == .previous { goBack(); return }
         let next = what == .next
         if menuOpen {
-            let all = apps
-            if next { menuIndex = (menuIndex + 1) % all.count } else { menuOpen = false; program = all[menuIndex] }
+            if next { menuIndex = (menuIndex + 1) % menuTitles.count } else { menuSelect() }
             return
         }
         if listEnd {
@@ -541,12 +616,111 @@ final class HubModel: ObservableObject {
             if !next { openMenu() } else if timer.isRunning { timerPause() } else { timerStart() }
         case .dashboard, .message:
             openMenu()
+        case .speed, .metronome, .tuner, .picker:
+            break                                   // handled in toolInput
         }
+    }
+
+    /// Opens what the menu's arrow is on: a group, the way back, or an app.
+    private func menuSelect() {
+        if let g = menuGroup, menuGroups.indices.contains(g) {
+            let items = menuGroups[g].items
+            if menuIndex == 0 || items.isEmpty { menuGroup = nil; menuIndex = g + 1; return }
+            menuOpen = false; menuGroup = nil
+            program = items[min(menuIndex - 1, items.count - 1)]
+        } else if menuIndex == 0 {
+            menuOpen = false; program = .dashboard
+        } else {
+            menuGroup = min(menuIndex - 1, menuGroups.count - 1); menuIndex = 1
+        }
+    }
+
+    /// The tools take all three inputs themselves. True when the input was used.
+    private func toolInput(_ what: Input) -> Bool {
+        switch program {
+        case .metronome:
+            switch what {
+            case .next: metroBPM = min(Metronome.range.upperBound, metroBPM + 4)
+            case .previous: metroBPM = max(Metronome.range.lowerBound, metroBPM - 4)
+            case .select: toggleMetronome()
+            }
+        case .tuner:
+            if what == .select { toggleTuner() }
+        case .speed:
+            let words = speedText()
+            switch what {
+            case .select:
+                if speedIndex >= words.count { speedIndex = 0; speedPlaying = true } else { speedPlaying.toggle() }
+            case .next: speedIndex = min(words.count, speedIndex + 12)
+            case .previous: speedIndex = max(0, speedIndex - 12)
+            }
+            speedAnchor()
+        case .picker:
+            let all = PickerMode.allCases
+            let at = all.firstIndex(of: pickerMode) ?? 0
+            switch what {
+            case .next: pickerMode = all[(at + 1) % all.count]
+            case .previous: pickerMode = all[(at + all.count - 1) % all.count]
+            case .select: roll()
+            }
+        default:
+            return false
+        }
+        return true
+    }
+
+    // MARK: Tools
+
+    func toggleMetronome() {
+        if metroOn { sound.stopMetronome() } else { sound.startMetronome(bpm: metroBPM, beats: metroBeats) }
+        metroOn = sound.metronomeOn
+    }
+
+    func toggleTuner() {
+        if tunerOn {
+            sound.stopListening(); tunerOn = false; tunerReading = nil
+            keepAwake.resume()
+            return
+        }
+        tunerNote = ""
+        Task {
+            let started = await sound.startListening()
+            self.tunerOn = started
+            self.tunerNote = started ? "" : "Allow the microphone for Glasses Hub in the iPhone's Settings."
+        }
+    }
+
+    private func heard(_ hz: Double?) {
+        if let hz, let reading = TunerReading(hz: hz) {
+            tunerReading = reading; tunerHeardAt = Date()
+        } else if Date().timeIntervalSince(tunerHeardAt) > 2 {
+            tunerReading = nil
+        }
+    }
+
+    private func speedText() -> [String] {
+        let key = readerText.hashValue
+        if speedWords.key != key { speedWords = (key, SpeedRead.words(of: readerText)) }
+        return speedWords.words
+    }
+    private func speedAnchor() { speedShownAt = Date() }
+    func toggleSpeedRead() { _ = toolInput(.select) }
+    func restartSpeedRead() { speedIndex = 0; speedAnchor() }
+
+    func roll() {
+        pickerResult = Picker.roll(pickerMode, options: Picker.options(from: pickerOptions))
+        pickerRolledAt = Date()
+    }
+
+    private func stopTools() {
+        if metroOn { sound.stopMetronome(); metroOn = false }
+        if tunerOn { sound.stopListening(); tunerOn = false; tunerReading = nil }
+        speedPlaying = false
     }
 
     /// The crown turned backwards: the previous page, item or view. Never opens or closes anything.
     private func goBack() {
-        if menuOpen { let n = apps.count; menuIndex = (menuIndex + n - 1) % n; return }
+        if menuOpen { let n = menuTitles.count; menuIndex = (menuIndex + n - 1) % n; return }
         if listEnd { listEnd = false; return }                     // back from the end stop to the last item
         let earlierPage = pageCount > 1 && pageIndex > 0
         switch program {
@@ -567,7 +741,7 @@ final class HubModel: ObservableObject {
             weatherStep = max(0, (weatherStep ?? 0) + 2)             // three views: two forward is one back
         case .facts, .reader:
             if earlierPage { pageStep(-1) }
-        case .trivia, .timer, .dashboard, .message:
+        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker:
             break
         }
     }
@@ -587,6 +761,7 @@ final class HubModel: ObservableObject {
     }
     /// What a look up or a double click does: 0 next, 1 select, 2 the apps menu (again to close it).
     private func gesture(_ action: Int) {
+        if action == 2 { wakeDashboard() }                  // the menu opens straight from a blank dashboard
         switch action {
         case 0: input(.next)
         case 1: input(.select)
@@ -597,10 +772,12 @@ final class HubModel: ObservableObject {
     }
 
     private func openMenu() {
-        menuIndex = apps.firstIndex(of: program) ?? 0
+        // Always the top level, with the arrow on where the current app lives.
+        menuGroup = nil
+        menuIndex = (menuGroups.firstIndex { $0.items.contains(program) }).map { $0 + 1 } ?? 0
         menuOpen = true
     }
-    func closeMenu() { menuOpen = false; listEnd = false }
+    func closeMenu() { menuOpen = false; menuGroup = nil; listEnd = false }
 
     func pageStep(_ by: Int) { sectionIndex += by; pager.step(by, now: Date().timeIntervalSinceReferenceDate) }
     func pageRestart() { sectionIndex = 0; pager.restart(now: Date().timeIntervalSinceReferenceDate); pagesPaused = false }
@@ -624,7 +801,11 @@ final class HubModel: ObservableObject {
             let shown = pages.count - 1 - Int(testCardsUntil.timeIntervalSince(now) / 12)
             return Card(pages[max(0, min(pages.count - 1, shown))])
         }
-        if menuOpen { return AppMenu.card(titles: apps.map(\.title), selected: menuIndex, screen: screen, glyphs: glyphs) }
+        if dashAsleep { return Card(["\u{3000}"]) }
+        if menuOpen {
+            let title = menuGroup.flatMap { menuGroups.indices.contains($0) ? menuGroups[$0].title : nil } ?? "Apps"
+            return AppMenu.card(title: title, titles: menuTitles, selected: min(menuIndex, menuTitles.count - 1), screen: screen, glyphs: glyphs)
+        }
         if listEnd {
             let what: String
             switch program { case .news: what = "headlines"; case .mail: what = "the inbox"; case .scores: what = "games"; case .agenda: what = "events"; default: what = "the list" }
@@ -716,6 +897,15 @@ final class HubModel: ObservableObject {
         case .message:
             let card = Reader.note(title: "", body: messageText, screen: screen)
             return card.isEmpty ? Card(["Message", "Type one in the app."]) : card
+        case .speed:
+            return SpeedRead.card(words: speedText(), index: speedIndex, size: speedChunk, playing: speedPlaying, wpm: speedWPM, screen: screen)
+        case .metronome:
+            return Metronome.card(bpm: metroBPM, beats: metroBeats, running: metroOn, screen: screen)
+        case .tuner:
+            if !tunerNote.isEmpty { return Card(["Tuner"] + TextLayout.wrap(tunerNote, width: screen.columns)) }
+            return Tuner.card(tunerReading, listening: tunerOn, screen: screen, glyphs: glyphs)
+        case .picker:
+            return Picker.card(mode: pickerMode, result: pickerResult, rolling: now.timeIntervalSince(pickerRolledAt) < 0.6, screen: screen)
         }
     }
 

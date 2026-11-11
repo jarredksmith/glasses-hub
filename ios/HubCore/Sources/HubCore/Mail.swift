@@ -146,11 +146,11 @@ extension Agenda {
 
 /// The on-glasses list of apps, with a marker on the one a click would open.
 public enum AppMenu {
-    public static func card(titles: [String], selected: Int, screen: Screen, glyphs: Glyphs = .plain) -> Card {
-        guard !titles.isEmpty else { return Card(["Apps"]) }
+    public static func card(title: String = "Apps", titles: [String], selected: Int, screen: Screen, glyphs: Glyphs = .plain) -> Card {
+        guard !titles.isEmpty else { return Card([title]) }
         let room = max(1, screen.rows - 1)
         let start = max(0, min(titles.count - room, selected - room / 2))
-        var lines = ["Apps  (turn: next, click: open)"]
+        var lines = [title]
         for i in start..<min(titles.count, start + room) {
             lines.append((i == selected ? glyphs.next : glyphs.blank) + " " + titles[i])
         }

@@ -28,6 +28,8 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     var onHoldExit: (() -> Bool)?
     var onDoubleClick: (() -> Void)?
     var translationMode = 0
+    /// The shortest gap between screens, in seconds. One second for everything but speed reading.
+    var pace: Double = 1.0 { didSet { if pace != oldValue { session.minInterval = max(0.25, pace) } } }
     /// After each crown click, start a new page session so the next click is reported too.
     /// 0 = off, 1 = new session over the open page, 2 = close the page and open it again.
     var rearm = 0
@@ -74,6 +76,7 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
         session.refreshInterval = refresh ? 30 : nil
         session.finishScrollingText = finishScrollingText
         session.translationMode = translationMode
+        session.minInterval = max(0.25, pace)
         decoder = FrameStreamDecoder()
         rows = size.rows; framesSent = 0; eventsLogged = 0
         userStopped = false; wantsStart = true; run += 1

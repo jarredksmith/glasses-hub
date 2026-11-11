@@ -356,3 +356,62 @@ final class MailTests: XCTestCase {
         XCTAssertEqual(AppMenu.endCard(of: "headlines").lines.count, 3)
     }
 }
+
+final class ToolsTests: XCTestCase {
+    private func tone(_ hz: Double, rate: Double = 44100, count: Int = 4096) -> [Float] {
+        var out = [Float]()
+        for i in 0..<count {
+            let t = Double(i) / rate
+            let value: Double = 0.5 * sin(2 * Double.pi * hz * t) + 0.2 * sin(4 * Double.pi * hz * t)
+            out.append(Float(value))
+        }
+        return out
+    }
+    func testPitch() {
+        for hz in [82.41, 110.0, 196.0, 329.63, 440.0, 880.0] {
+            let found = Pitch.detect(tone(hz), sampleRate: 44100)
+            XCTAssertNotNil(found)
+            XCTAssertEqual(found ?? 0, hz, accuracy: hz * 0.01)
+        }
+        XCTAssertNil(Pitch.detect([Float](repeating: 0, count: 4096), sampleRate: 44100))
+        let a = TunerReading(hz: 440)
+        XCTAssertEqual(a?.note, "A"); XCTAssertEqual(a?.octave, 4); XCTAssertEqual(a?.cents, 0)
+        let e = TunerReading(hz: 82.41)
+        XCTAssertEqual(e?.note, "E"); XCTAssertEqual(e?.octave, 2)
+        let flat = TunerReading(hz: 435)
+        XCTAssertEqual(flat?.note, "A"); XCTAssertEqual(flat?.cents, -20)
+        let card = Tuner.card(flat, listening: true, screen: Screen(rows: 7, columns: 28, wideColumns: 14))
+        XCTAssertTrue(card.lines[3].hasPrefix("Flat 20"))
+        XCTAssertLessThanOrEqual(card.lines[2].count, 28)
+    }
+    func testMetronome() {
+        let bar = Metronome.bar(bpm: 120, beats: 4, sampleRate: 44100)
+        XCTAssertEqual(bar.count, 22050 * 4)
+        XCTAssertNotEqual(bar[1], 0); XCTAssertEqual(bar[22049], 0, accuracy: 0.001)
+        XCTAssertEqual(Metronome.bar(bpm: 999, beats: 1, sampleRate: 44100).count, 11025)
+        XCTAssertEqual(Metronome.tempoName(120), "Allegro")
+    }
+    func testPicker() {
+        XCTAssertEqual(Picker.options(from: "Pizza, Tacos\n  Sushi \n"), ["Pizza", "Tacos", "Sushi"])
+        XCTAssertEqual(Picker.roll(.coin, using: { _ in 1 }).text, "Tails")
+        XCTAssertEqual(Picker.roll(.twoD6, using: { _ in 5 }).text, "12")
+        XCTAssertEqual(Picker.roll(.list, options: ["a", "b"], using: { _ in 1 }).text, "b")
+        XCTAssertEqual(Picker.face(5), ["●   ●", "  ●  ", "●   ●"])
+        let screen = Screen(rows: 7, columns: 28, wideColumns: 14)
+        XCTAssertEqual(Picker.card(mode: .twoD6, result: Picker.roll(.twoD6, using: { _ in 0 }), rolling: false, screen: screen).lines.last, "Total 2")
+    }
+    func testSpeedRead() {
+        let words = SpeedRead.words(of: "The quick brown fox. Jumps over\nthe lazy dog")
+        XCTAssertEqual(words.count, 9)
+        XCTAssertEqual(SpeedRead.chunk(words, at: 0, size: 2, width: 28).text, "The quick")
+        XCTAssertEqual(SpeedRead.chunk(words, at: 2, size: 3, width: 28).text, "brown fox.")       // stops at the sentence end
+        XCTAssertEqual(SpeedRead.chunk(words, at: 0, size: 3, width: 6).count, 1)
+        XCTAssertEqual(SpeedRead.interval(wpm: 200, chunk: 2), 0.6, accuracy: 0.001)
+        XCTAssertEqual(SpeedRead.interval(wpm: 400, chunk: 1), 0.3, accuracy: 0.001)
+        let screen = Screen(rows: 7, columns: 28, wideColumns: 14)
+        let card = SpeedRead.card(words: words, index: 0, size: 2, playing: true, wpm: 200, screen: screen)
+        XCTAssertEqual(card.lines.count, 7)
+        XCTAssertTrue(card.lines[3].contains("The quick"))
+    }
+}
+

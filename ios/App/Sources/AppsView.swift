@@ -7,24 +7,33 @@ struct AppsView: View {
 
     var body: some View {
         NavigationStack {
-            List(model.apps) { program in
-                NavigationLink {
-                    ProgramSettings(program: program)
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: program.icon).frame(width: 28).foregroundStyle(Color.accentColor)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(program.title)
-                            Text(program.blurb).font(.footnote).foregroundStyle(.secondary)
-                        }
-                        if model.program == program {
-                            Spacer()
-                            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
-                        }
-                    }
+            List {
+                Section { row(.dashboard) }
+                ForEach(model.menuGroups) { group in
+                    Section(group.title) { ForEach(group.items) { row($0) } }
                 }
             }
             .navigationTitle("Apps")
+        }
+    }
+}
+
+extension AppsView {
+    @ViewBuilder fileprivate func row(_ program: Program) -> some View {
+        NavigationLink {
+            ProgramSettings(program: program)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: program.icon).frame(width: 28).foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(program.title)
+                    Text(program.blurb).font(.footnote).foregroundStyle(.secondary)
+                }
+                if model.program == program {
+                    Spacer()
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
+                }
+            }
         }
     }
 }
@@ -40,7 +49,8 @@ struct ProgramSettings: View {
                     .disabled(model.program == program)
             } footer: { Text(program.blurb) }
             switch program {
-            case .dashboard: dashboard
+            case .dashboard: dashboard; dashboardSleep
+            case .speed, .metronome, .tuner, .picker: tools
             case .scores: scores
             case .news: news
             case .mail: mail
@@ -66,6 +76,59 @@ struct ProgramSettings: View {
             TextField("Your own line (optional)", text: $model.dashNote)
         } header: { Text("Lines to include") } footer: {
             Text("The time and date are always on top. A running timer adds its own line. If there are more lines than fit, they take turns.")
+        }
+    }
+
+    @ViewBuilder private var dashboardSleep: some View {
+        Section {
+            Toggle("Go blank when idle", isOn: $model.dashSleep)
+            if model.dashSleep {
+                Stepper("Blank after \(model.dashSleepSeconds) seconds", value: $model.dashSleepSeconds, in: 5...300, step: 5)
+            }
+        } footer: {
+            Text("The dashboard clears after this long. Look up, or turn the crown, to bring it back. Alerts still pop up while it's blank.")
+        }
+    }
+
+    @ViewBuilder private var tools: some View {
+        switch program {
+        case .metronome:
+            Section {
+                Stepper("\(model.metroBPM) BPM  (\(Metronome.tempoName(model.metroBPM)))", value: $model.metroBPM, in: Metronome.range, step: 1)
+                Picker("Beats in a bar", selection: $model.metroBeats) { ForEach([2, 3, 4, 6], id: \.self) { Text("\($0)").tag($0) } }
+                Button(model.metroOn ? "Stop" : "Start") { model.toggleMetronome() }
+            } footer: {
+                Text("The clicks come from your phone, so turn its volume up. On the glasses: turn the crown to change the tempo, look up to start or stop.")
+            }
+        case .tuner:
+            Section {
+                Button(model.tunerOn ? "Stop listening" : "Start listening") { model.toggleTuner() }
+                if let r = model.tunerReading {
+                    LabeledContent("Hearing", value: "\(r.note)\(r.octave)  \(r.cents > 0 ? "+" : "")\(r.cents) cents")
+                } else if model.tunerOn { Text("Play a note near your phone.").foregroundStyle(.secondary) }
+                if !model.tunerNote.isEmpty { Text(model.tunerNote).foregroundStyle(.secondary) }
+            } footer: {
+                Text("Uses the phone's microphone, so keep the phone near the instrument. Nothing is recorded. On the glasses: look up to start or stop.")
+            }
+        case .speed:
+            Section {
+                Stepper("\(model.speedWPM) words a minute", value: $model.speedWPM, in: 100...400, step: 20)
+                Picker("Words at a time", selection: $model.speedChunk) { ForEach(1...3, id: \.self) { Text("\($0)").tag($0) } }
+                Button(model.speedPlaying ? "Pause" : "Play") { model.toggleSpeedRead() }
+                Button("Back to the start") { model.restartSpeedRead() }
+            } footer: {
+                Text("Reads the text you put under Apps > Reader. On the glasses: look up to play or pause, turn the crown to skip forward or back. The glasses can only be sent about three screens a second, so very fast settings show more words at a time.")
+            }
+        case .picker:
+            Section {
+                Picker("What to roll", selection: $model.pickerMode) { ForEach(PickerMode.allCases) { Text($0.title).tag($0) } }
+                Button("Roll") { model.roll() }
+                if let result = model.pickerResult, result.mode == model.pickerMode { LabeledContent("Result", value: result.text) }
+            } footer: { Text("On the glasses: turn the crown to change what to roll, look up to roll.") }
+            Section {
+                TextEditor(text: $model.pickerOptions).frame(minHeight: 120)
+            } header: { Text("My list") } footer: { Text("One option per line, for \"Pick from my list\".") }
+        default: EmptyView()
         }
     }
 
