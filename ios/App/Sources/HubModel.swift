@@ -103,9 +103,10 @@ final class HubModel: ObservableObject {
     @Published var mailQuery: String { didSet { defaults.set(mailQuery, forKey: "mailQuery"); mailDue = .distantPast } }
     @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "headPaging") } }
     @Published var crownPaging: Bool { didSet { defaults.set(crownPaging, forKey: "crownPaging") } }
-    /// Turning the crown back goes back. Off by default: the scroll room it needs stops the glasses
-    /// reporting crown clicks, so with it on a click is a quick back-then-forward flick instead.
-    @Published var crownBack: Bool { didSet { defaults.set(crownBack, forKey: "crownBack") } }
+    /// Turning the crown back selects, like a click. The glasses report a crown click only now and
+    /// then (one came through, then none for minutes), while every turn is reported, so the back turn
+    /// is the dependable way to select. It needs a line of scroll room above each screen.
+    @Published var crownBack: Bool { didSet { defaults.set(crownBack, forKey: "crownBackSelects") } }
     @Published var logEvents: Bool { didSet { defaults.set(logEvents, forKey: "logEvents"); link.logEvents = logEvents } }
     @Published var crownScroll: Bool { didSet { defaults.set(crownScroll, forKey: "crownScroll") } }
     @Published var scoresView: ScoresView { didSet { defaults.set(scoresView.rawValue, forKey: "scoresView") } }
@@ -236,7 +237,7 @@ final class HubModel: ObservableObject {
         volumePaging = bool("volumePaging", true)
         logEvents = bool("logEvents", false)
         crownPaging = bool("crownPaging", true)
-        crownBack = bool("crownBack", false)
+        crownBack = bool("crownBackSelects", true)
         headPaging = bool("headPaging", false)
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
@@ -278,7 +279,7 @@ final class HubModel: ObservableObject {
         link.onCrown = { [weak self] direction in
             guard let self, self.crownPaging, self.link.isShowing else { return }
             if direction == 0 { self.input(.select) }
-            else if !self.scrollingBlock { self.input(direction > 0 ? .next : .previous) }   // in crown-scroll mode the crown just scrolls
+            else if !self.scrollingBlock { self.input(direction > 0 ? .next : .select) }   // in crown-scroll mode the crown just scrolls
         }
         link.onHeadRaise = { [weak self] in
             guard let self, self.headPaging, self.link.isShowing else { return }
@@ -435,13 +436,12 @@ final class HubModel: ObservableObject {
         if card.scrolls != previewScrolls { previewScrolls = card.scrolls }
         scrollingBlock = card.scrolls
         if link.isRunning {
-            // With two-way crown on, each screen goes up with a line of scroll room above it; that is
-            // what lets the glasses' reports tell a turn back from a turn forward. It costs the click:
-            // the glasses stop reporting crown clicks once a caption has text above it.
+            // Each screen goes up with a line of scroll room above it; that is what lets the glasses'
+            // reports tell a turn back (select) from a turn forward (next).
             let room = crownPaging && crownBack && !card.scrolls
             let sent = room
-                ? TextLayout.withScrollRoom(card.lines, rows: screen.rows, marker: glyphs.up + " back").joined(separator: "\n") : text
-            link.show(sent, scrolls: card.scrolls, finished: room)
+                ? TextLayout.withScrollRoom(card.lines, rows: screen.rows, marker: glyphs.up + " select").joined(separator: "\n") : text
+            link.show(sent, scrolls: card.scrolls)
             link.tick()
         }
     }

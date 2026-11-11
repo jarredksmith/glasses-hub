@@ -26,8 +26,6 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     var onCrown: ((Int) -> Void)?
     private var lastDepth = 0
     private var lastBack = Date.distantPast
-    /// A back turn waits a moment before it counts, in case a forward turn follows: that flick is a click.
-    private var pendingBack: Task<Void, Never>?
     /// The wearer tilted their head up while this app's page was up.
     var onHeadRaise: (() -> Void)?
     private var lastRaise = Date.distantPast
@@ -271,23 +269,14 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
                     switch action {
                     case .crownTurn:
                         // one notch of the crown reports twice; treat reports close together as one turn
-                        if let pending = pendingBack {
-                            pending.cancel(); pendingBack = nil
-                            note("Back then forward: taken as a click.")
-                            onCrown?(0)
-                        } else if Date().timeIntervalSince(lastTurn) > 0.3 { onCrown?(1) }
+                        // a forward turn right after a back turn is the crown settling, not a new step
+                        if Date().timeIntervalSince(lastTurn) > 0.3, Date().timeIntervalSince(lastBack) > 0.6 { onCrown?(1) }
                         lastTurn = Date(); lastDepth = 0
                     case .crownBack(let depth):
                         // only the first line scrolled back counts; a spin shouldn't flip several pages
                         if depth > lastDepth, Date().timeIntervalSince(lastBack) > 0.7 {
                             lastBack = Date()
-                            pendingBack?.cancel()
-                            pendingBack = Task { @MainActor [weak self] in
-                                try? await Task.sleep(nanoseconds: 800_000_000)
-                                guard !Task.isCancelled, let self else { return }
-                                self.pendingBack = nil
-                                self.onCrown?(-1)
-                            }
+                            onCrown?(-1)
                         }
                         lastDepth = depth
                     case .crownClick: onCrown?(0)

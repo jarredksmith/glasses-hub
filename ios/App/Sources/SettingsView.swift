@@ -36,11 +36,9 @@ struct SettingsView: View {
                             value: $model.pageSeconds, in: 0...60, step: 2)
                     Toggle("Navigate with the crown", isOn: $model.crownPaging)
                     if model.crownPaging {
-                        Toggle("Turn back to go back (experimental)", isOn: $model.crownBack)
-                        if model.crownBack {
-                            Text("The crown click stops working in this mode. To select, flick the crown back and straight forward again.")
-                                .font(.footnote).foregroundStyle(.secondary)
-                        }
+                        Toggle("Turn back to select", isOn: $model.crownBack)
+                        Text("Turn forward for next, turn back to open or select. The glasses only pass on a crown click now and then, so the click can't be relied on.")
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                     Toggle("Navigate with the volume buttons", isOn: $model.volumePaging)
                     Toggle("Tilt my head up for \"next\" (experimental)", isOn: $model.headPaging)
