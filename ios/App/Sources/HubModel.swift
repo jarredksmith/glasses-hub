@@ -103,6 +103,9 @@ final class HubModel: ObservableObject {
     @Published var mailQuery: String { didSet { defaults.set(mailQuery, forKey: "mailQuery"); mailDue = .distantPast } }
     @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "headPaging") } }
     @Published var crownPaging: Bool { didSet { defaults.set(crownPaging, forKey: "crownPaging") } }
+    /// Turning the crown back goes back. Off by default: the scroll room it needs stops the glasses
+    /// reporting crown clicks, so with it on a click is a quick back-then-forward flick instead.
+    @Published var crownBack: Bool { didSet { defaults.set(crownBack, forKey: "crownBack") } }
     @Published var logEvents: Bool { didSet { defaults.set(logEvents, forKey: "logEvents"); link.logEvents = logEvents } }
     @Published var crownScroll: Bool { didSet { defaults.set(crownScroll, forKey: "crownScroll") } }
     @Published var scoresView: ScoresView { didSet { defaults.set(scoresView.rawValue, forKey: "scoresView") } }
@@ -233,6 +236,7 @@ final class HubModel: ObservableObject {
         volumePaging = bool("volumePaging", true)
         logEvents = bool("logEvents", false)
         crownPaging = bool("crownPaging", true)
+        crownBack = bool("crownBack", false)
         headPaging = bool("headPaging", false)
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
@@ -431,14 +435,13 @@ final class HubModel: ObservableObject {
         if card.scrolls != previewScrolls { previewScrolls = card.scrolls }
         scrollingBlock = card.scrolls
         if link.isRunning {
-            // With crown navigation on, each screen goes up with a line of scroll room above it; that is
-            // what lets the glasses' reports tell a turn back from a turn forward.
-            let sent = crownPaging && !card.scrolls
+            // With two-way crown on, each screen goes up with a line of scroll room above it; that is
+            // what lets the glasses' reports tell a turn back from a turn forward. It costs the click:
+            // the glasses stop reporting crown clicks once a caption has text above it.
+            let room = crownPaging && crownBack && !card.scrolls
+            let sent = room
                 ? TextLayout.withScrollRoom(card.lines, rows: screen.rows, marker: glyphs.up + " back").joined(separator: "\n") : text
-            // Screens with scroll room go up marked "finished". While a caption is still marked as
-            // changing and has text above it, the glasses keep a crown click to themselves; the two times
-            // a click did reach the app, the text was either finished or had nothing above it.
-            link.show(sent, scrolls: card.scrolls, finished: crownPaging && !card.scrolls)
+            link.show(sent, scrolls: card.scrolls, finished: room)
             link.tick()
         }
     }
