@@ -47,6 +47,7 @@ public struct CaptionSession {
     private var deadline: TimeInterval?
     private var wanted: String?
     private var wantedScrolls = false
+    private var wantedFinished = false
     private var stopQueued = false
     private enum BusyWrite { case configure, text, stop }
 
@@ -84,8 +85,9 @@ public struct CaptionSession {
 
     /// The screen to show. Sent on the next `tick` that the rate limit allows.
     /// `scrolls` marks text longer than the page, which is left alone once sent so the crown can scroll it.
-    public mutating func show(_ frame: String, scrolls: Bool = false) {
-        wanted = frame; wantedScrolls = scrolls
+    /// `finished` sends it marked as complete rather than still changing.
+    public mutating func show(_ frame: String, scrolls: Bool = false, finished: Bool = false) {
+        wanted = frame; wantedScrolls = scrolls; wantedFinished = finished
     }
 
     public mutating func writeFinished(ok: Bool, now: TimeInterval) -> [Action] {
@@ -147,7 +149,7 @@ public struct CaptionSession {
             return [.log("Skipped a screen that was too long to send.")]
         }
         busy = .text; busySince = now; lastTextAt = now; lastSentFrame = wanted; framesSent += 1
-        return [.write(packet(CaptionWire.text(sid: sid, frame: wanted, finished: wantedScrolls && finishScrollingText)), text: true)]
+        return [.write(packet(CaptionWire.text(sid: sid, frame: wanted, finished: wantedFinished || (wantedScrolls && finishScrollingText))), text: true)]
     }
 
     /// Close this session's page. Safe to call at any point.

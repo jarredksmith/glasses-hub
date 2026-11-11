@@ -92,8 +92,8 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     }
 
     /// The text to keep on the glasses. Sent on the next tick the session allows.
-    func show(_ text: String, scrolls: Bool) {
-        session.show(text, scrolls: scrolls)
+    func show(_ text: String, scrolls: Bool, finished: Bool = false) {
+        session.show(text, scrolls: scrolls, finished: finished)
     }
 
     /// Call a few times a second while the display is on.

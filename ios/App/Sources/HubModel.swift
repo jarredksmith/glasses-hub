@@ -435,7 +435,10 @@ final class HubModel: ObservableObject {
             // what lets the glasses' reports tell a turn back from a turn forward.
             let sent = crownPaging && !card.scrolls
                 ? TextLayout.withScrollRoom(card.lines, rows: screen.rows, marker: glyphs.up + " back").joined(separator: "\n") : text
-            link.show(sent, scrolls: card.scrolls)
+            // Screens with scroll room go up marked "finished". While a caption is still marked as
+            // changing and has text above it, the glasses keep a crown click to themselves; the two times
+            // a click did reach the app, the text was either finished or had nothing above it.
+            link.show(sent, scrolls: card.scrolls, finished: crownPaging && !card.scrolls)
             link.tick()
         }
     }
