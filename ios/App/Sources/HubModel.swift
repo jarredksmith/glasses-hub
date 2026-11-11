@@ -103,18 +103,18 @@ final class HubModel: ObservableObject {
     @Published var mailQuery: String { didSet { defaults.set(mailQuery, forKey: "mailQuery"); mailDue = .distantPast } }
     @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "headPaging") } }
     /// What a look up does when head navigation is on: false = next, true = select.
-    @Published var headSelects: Bool { didSet { defaults.set(headSelects, forKey: "headSelects") } }
+    @Published var headAction: Int { didSet { defaults.set(headAction, forKey: "headAction") } }   // 0 next, 1 select, 2 apps menu
     @Published var crownPaging: Bool { didSet { defaults.set(crownPaging, forKey: "crownPaging") } }
     /// Turning the crown back selects, like a click. The glasses report a crown click only now and
     /// then (one came through, then none for minutes), while every turn is reported, so the back turn
     /// is the dependable way to select. It needs a line of scroll room above each screen.
-    @Published var crownBack: Bool { didSet { defaults.set(crownBack, forKey: "crownBackSelects") } }
+    @Published var crownBack: Bool { didSet { defaults.set(crownBack, forKey: "crownTwoWay") } }
     @Published var logEvents: Bool { didSet { defaults.set(logEvents, forKey: "logEvents"); link.logEvents = logEvents } }
     @Published var crownScroll: Bool { didSet { defaults.set(crownScroll, forKey: "crownScroll") } }
     /// Holding the crown (which makes the glasses leave the page) counts as select; the page reopens.
     @Published var holdSelects: Bool { didSet { defaults.set(holdSelects, forKey: "holdSelects") } }
     /// How to keep crown clicks coming (see GlassesLink.rearm).
-    @Published var clickRearm: Int { didSet { defaults.set(clickRearm, forKey: "clickRearm"); link.rearm = clickRearm } }
+    @Published var clickRearm: Int { didSet { defaults.set(clickRearm, forKey: "clickRearm2"); link.rearm = clickRearm } }
     /// Experiment for finding a click the glasses report every time. 0 = off.
     @Published var translationMode: Int { didSet { defaults.set(translationMode, forKey: "translationMode"); link.translationMode = translationMode } }
     @Published var scoresView: ScoresView { didSet { defaults.set(scoresView.rawValue, forKey: "scoresView") } }
@@ -244,13 +244,13 @@ final class HubModel: ObservableObject {
         crownScroll = bool("crownScroll", false)
         holdSelects = bool("holdSelects", false)
         translationMode = defaults.integer(forKey: "translationMode")
-        clickRearm = defaults.object(forKey: "clickRearm") as? Int ?? 2
+        clickRearm = defaults.object(forKey: "clickRearm2") as? Int ?? 0
         volumePaging = bool("volumePaging", true)
         logEvents = bool("logEvents", false)
         crownPaging = bool("crownPaging", true)
-        crownBack = false       // off while testing whether the scroll-room line is what stops crown clicks
+        crownBack = bool("crownTwoWay", true)
         headPaging = bool("headPaging", false)
-        headSelects = bool("headSelects", true)
+        headAction = defaults.object(forKey: "headAction") as? Int ?? 2
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
         scoresView = ScoresView(rawValue: d.string(forKey: "scoresView") ?? "") ?? .auto
@@ -298,12 +298,16 @@ final class HubModel: ObservableObject {
         link.onCrown = { [weak self] direction in
             guard let self, self.crownPaging, self.link.isShowing else { return }
             if direction == 0 { self.input(.select) }
-            else if !self.scrollingBlock { self.input(direction > 0 ? .next : .select) }   // in crown-scroll mode the crown just scrolls
+            else if !self.scrollingBlock { self.input(direction > 0 ? .next : .previous) }   // in crown-scroll mode the crown just scrolls
         }
         link.onHeadRaise = { [weak self] in
             guard let self, self.headPaging, self.link.isShowing else { return }
             self.link.record("Look up.")
-            self.input(self.headSelects ? .select : .next)
+            switch self.headAction {
+            case 0: self.input(.next)
+            case 1: self.input(.select)
+            default: if self.menuOpen { self.closeMenu() } else { self.openMenu() }
+            }
         }
         buttons.onPress = { [weak self] direction in
             guard let self, self.link.isShowing else { return }
@@ -460,7 +464,7 @@ final class HubModel: ObservableObject {
             // reports tell a turn back (select) from a turn forward (next).
             let room = crownPaging && crownBack && !card.scrolls
             let sent = room
-                ? TextLayout.withScrollRoom(card.lines, rows: screen.rows, marker: glyphs.up + " select").joined(separator: "\n") : text
+                ? TextLayout.withScrollRoom(card.lines, rows: screen.rows, marker: "\u{00B7}").joined(separator: "\n") : text
             link.show(sent, scrolls: card.scrolls)
             link.tick()
         }
@@ -487,7 +491,7 @@ final class HubModel: ObservableObject {
         }
         if listEnd {
             listEnd = false
-            restartList()
+            if next { restartList() } else { openMenu() }
             return
         }
         let morePages = pageCount > 1 && pageIndex < pageCount - 1
@@ -572,9 +576,6 @@ final class HubModel: ObservableObject {
         }
     }
     private func openMenu() {
-        // The on-glasses app menu is switched off: apps are chosen on the phone. Kept as a no-op so the
-        // places that used to open it simply do nothing.
-        return
         menuIndex = Program.allCases.firstIndex(of: program) ?? 0
         menuOpen = true
     }

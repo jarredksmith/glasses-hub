@@ -35,10 +35,11 @@ struct SettingsView: View {
                     Stepper(model.pageSeconds == 0 ? "Pages turn only when I press a button" : "Turn the page every \(Int(model.pageSeconds)) seconds",
                             value: $model.pageSeconds, in: 0...60, step: 2)
                     Toggle("Navigate with the crown", isOn: $model.crownPaging)
+                    Toggle("Turn the crown back to go back", isOn: $model.crownBack)
                     Picker("After a crown click", selection: $model.clickRearm) {
+                        Text("Do nothing").tag(0)
                         Text("Reopen the page").tag(2)
                         Text("Refresh quietly").tag(1)
-                        Text("Do nothing").tag(0)
                     }
                     Toggle("Hold the crown to select (page reopens)", isOn: $model.holdSelects)
                     Picker("Click experiment", selection: $model.translationMode) {
@@ -50,9 +51,10 @@ struct SettingsView: View {
                     Toggle("Navigate with the volume buttons", isOn: $model.volumePaging)
                     Toggle("Look up to navigate", isOn: $model.headPaging)
                     if model.headPaging {
-                        Picker("A look up means", selection: $model.headSelects) {
-                            Text("Select").tag(true)
-                            Text("Next").tag(false)
+                        Picker("A look up means", selection: $model.headAction) {
+                            Text("Apps menu").tag(2)
+                            Text("Select").tag(1)
+                            Text("Next").tag(0)
                         }
                     }
                     Toggle("Let the crown scroll long text instead (experimental)", isOn: $model.crownScroll)

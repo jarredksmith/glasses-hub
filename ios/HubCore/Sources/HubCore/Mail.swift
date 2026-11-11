@@ -158,6 +158,6 @@ public enum AppMenu {
     }
     /// Shown after the last item of a list, so there's a way out to the menu.
     public static func endCard(of what: String) -> Card {
-        Card(["End of \(what)", "Turn or click: back to the start"])
+        Card(["End of \(what)", "Turn: back to the start", "Double click: apps menu"])
     }
 }

@@ -353,6 +353,6 @@ final class MailTests: XCTestCase {
         XCTAssertEqual(menu.lines.count, 5)
         XCTAssertTrue(menu.lines.contains("→ App 8"))
         XCTAssertEqual(AppMenu.card(titles: ["A", "B"], selected: 0, screen: Screen(size: .large)).lines[1], "＞ A")
-        XCTAssertEqual(AppMenu.endCard(of: "headlines").lines.count, 2)
+        XCTAssertEqual(AppMenu.endCard(of: "headlines").lines.count, 3)
     }
 }
