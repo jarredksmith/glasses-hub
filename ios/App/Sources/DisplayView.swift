@@ -30,6 +30,10 @@ struct DisplayView: View {
                 Circle().fill(link.isShowing ? Color.green : (link.isRunning ? Color.orange : Color.secondary.opacity(0.5)))
                     .frame(width: 10, height: 10)
                 Text(link.status).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                if let battery = link.battery, link.isRunning {
+                    Spacer()
+                    Label("\(battery)%", systemImage: "battery.50").font(.footnote).foregroundStyle(.secondary)
+                }
             }
             if let ended = model.endedNotice, !link.isRunning, ended != link.status {
                 Text(ended).font(.footnote).foregroundStyle(.secondary)

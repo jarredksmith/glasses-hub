@@ -247,3 +247,32 @@ final class CaptionSessionTests: XCTestCase {
         XCTAssertEqual(s.maxLines, 5)
     }
 }
+
+final class GlassesReportTests: XCTestCase {
+    private func frame(_ json: String, business: UInt8 = 15, type: UInt32 = 76) -> GlassesFrame {
+        let object = try! JSONSerialization.jsonObject(with: Data(json.utf8)) as! [String: Any]
+        return GlassesFrame(sequence: 1, business: business, payload: Envelope.encode(type: type, json: object))
+    }
+    // shapes taken from a log of the owner's glasses (Strix OS 1.0.6.11), identifiers removed
+    let scroll = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"action_result":"fail","action_type":"scroll","history_depth":0},"packageName":"com.rayneo.liteos","type":"3CE0FD898F"},"mode":0,"value":0}}"#
+    let click = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"battery_level":46,"event_id":20,"event_name":"KEY_PRESS","result":"no_transition"},"packageName":"com.rayneo.liteos.state_machine"},"mode":0}}"#
+    let double = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"battery_level":46,"event_id":68,"event_name":"KEY_DOUBLE_CLICK"}}}}"#
+    let stats = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"bat":46,"bri":4,"charge":0}}}}"#
+    let other = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"component_type":"Stocks","refresh_result":"success"}}}}"#
+
+    func testCrownAndBattery() {
+        XCTAssertEqual(GlassesReport(frame(scroll))?.action, .crownTurn)
+        XCTAssertEqual(GlassesReport(frame(click))?.action, .crownClick)
+        XCTAssertEqual(GlassesReport(frame(click))?.battery, 46)
+        XCTAssertNil(GlassesReport(frame(double))?.action)                 // a double click belongs to the assistant
+        XCTAssertEqual(GlassesReport(frame(double))?.battery, 46)
+        XCTAssertEqual(GlassesReport(frame(stats))?.battery, 46)
+        XCTAssertNil(GlassesReport(frame(other)))
+        XCTAssertNil(GlassesReport(frame(scroll, business: 19)))
+        XCTAssertNil(GlassesReport(frame(#"{"cmd":"screen_status"}"#)))
+    }
+    func testInnerPartPackedAsText() {
+        let packed = #"{"cmd":"analytics_log","payload":{"data":"{\"extras\":{\"action_type\":\"scroll\"}}"}}"#
+        XCTAssertEqual(GlassesReport(frame(packed))?.action, .crownTurn)
+    }
+}

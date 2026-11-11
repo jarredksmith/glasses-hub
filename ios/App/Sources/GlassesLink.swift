@@ -20,6 +20,11 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     @Published private(set) var rows = 7
     @Published private(set) var framesSent = 0
     @Published private(set) var glassesName = ""
+    /// The glasses' battery, when they've mentioned it.
+    @Published private(set) var battery: Int?
+    /// The crown was turned (+1) or clicked (-1) while this app's page was up.
+    var onCrown: ((Int) -> Void)?
+    private var lastTurn = Date.distantPast
 
     /// Called when a running display ends for any reason other than the user pressing Stop.
     var onEnded: ((String) -> Void)?
@@ -248,6 +253,18 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
         guard peripheral === self.peripheral, characteristic === incoming, error == nil, let data = characteristic.value else { return }
         for frame in decoder.append(data) {
             if logEvents, eventsLogged < 400 { eventsLogged += 1; note(describe(frame)) }
+            if let report = GlassesReport(frame) {
+                if let level = report.battery, level != battery { battery = level }
+                if let action = report.action, state == .showing {
+                    switch action {
+                    case .crownTurn:
+                        // one notch of the crown reports twice; treat reports close together as one turn
+                        if Date().timeIntervalSince(lastTurn) > 0.3 { onCrown?(1) }
+                        lastTurn = Date()
+                    case .crownClick: onCrown?(-1)
+                    }
+                }
+            }
             if frame.business == CaptionWire.business {
                 perform(session.received(frame, now: now))
             } else if frame.business == 15, frame.isPlain, let message = Envelope(frame.payload),

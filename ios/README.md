@@ -51,6 +51,9 @@ with the display on). If the display can't open, the alert goes out as a notific
 - **Symbols.** Dots, stars, arrows, squares and box lines from the old GB2312 set, which a Chinese-market
   display font should carry. Settings has three levels (plain, symbols, symbols plus shaded bars) and a
   test that puts every character used on the glasses.
+- **The crown turns pages.** The glasses' usage reports reach the phone about a second after a crown
+  turn or click (seen on Strix OS 1.0.6.11). A turn is "next page", a single click is "back". The reports
+  don't say which way the crown turned.
 - **Buttons turn pages.** With the display on, the phone's volume buttons (or a Bluetooth ring that sends
   them) step pages forward and back, even with the phone locked. The volume is put back after each press.
 - **Teleprompter hand-off.** "Send to teleprompter" saves the text as a .txt file in this app's folder

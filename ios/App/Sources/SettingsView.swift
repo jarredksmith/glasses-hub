@@ -34,10 +34,11 @@ struct SettingsView: View {
                 Section {
                     Stepper(model.pageSeconds == 0 ? "Pages turn only when I press a button" : "Turn the page every \(Int(model.pageSeconds)) seconds",
                             value: $model.pageSeconds, in: 0...60, step: 2)
+                    Toggle("The crown turns pages", isOn: $model.crownPaging)
                     Toggle("Volume buttons turn pages", isOn: $model.volumePaging)
                     Toggle("Let the crown scroll long text instead (experimental)", isOn: $model.crownScroll)
                 } header: { Text("Long text") } footer: {
-                    Text("With the display on, volume up is the next page and volume down the previous one, from the phone's buttons or a Bluetooth ring or remote that sends them. It works with the phone locked, and your volume is put back after each press. On screens without pages, up moves on: next headline, reveal the trivia answer, a new fact.\n\nAnything taller than the screen is split into pages that turn by themselves, because the glasses jump back to the end of scrolled text after a few seconds. The experiment sends reader and news text in one piece, marked as finished, which may stop that jump. It applies the next time the display starts.")
+                    Text("Turn the crown either way for the next page; click it once to go back a page. (The glasses report a turn but not its direction.) Double-click and hold still belong to the glasses: the assistant, and leaving the display.\n\nWith the display on, volume up is the next page and volume down the previous one, from the phone's buttons or a Bluetooth ring or remote that sends them. It works with the phone locked, and your volume is put back after each press. On screens without pages, up moves on: next headline, reveal the trivia answer, a new fact.\n\nAnything taller than the screen is split into pages that turn by themselves, because the glasses jump back to the end of scrolled text after a few seconds. The experiment sends reader and news text in one piece, marked as finished, which may stop that jump. It applies the next time the display starts.")
                 }
 
                 Section {

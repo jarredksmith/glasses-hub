@@ -97,6 +97,7 @@ final class HubModel: ObservableObject {
     @Published var glyphStyle: GlyphStyle { didSet { defaults.set(glyphStyle.rawValue, forKey: "glyphStyle") } }
     @Published var pageSeconds: Double { didSet { defaults.set(pageSeconds, forKey: "pageSeconds") } }
     @Published var volumePaging: Bool { didSet { defaults.set(volumePaging, forKey: "volumePaging"); applyKeepAwake() } }
+    @Published var crownPaging: Bool { didSet { defaults.set(crownPaging, forKey: "crownPaging") } }
     @Published var logEvents: Bool { didSet { defaults.set(logEvents, forKey: "logEvents"); link.logEvents = logEvents } }
     @Published var crownScroll: Bool { didSet { defaults.set(crownScroll, forKey: "crownScroll") } }
     @Published var scoresView: ScoresView { didSet { defaults.set(scoresView.rawValue, forKey: "scoresView") } }
@@ -208,6 +209,7 @@ final class HubModel: ObservableObject {
         crownScroll = bool("crownScroll", false)
         volumePaging = bool("volumePaging", true)
         logEvents = bool("logEvents", false)
+        crownPaging = bool("crownPaging", true)
         scoresView = ScoresView(rawValue: d.string(forKey: "scoresView") ?? "") ?? .auto
         pinnedGame = d.string(forKey: "pinnedGame") ?? ""
         weatherView = WeatherView(rawValue: d.string(forKey: "weatherView") ?? "") ?? .cycle
@@ -242,6 +244,10 @@ final class HubModel: ObservableObject {
 
         calendarAllowed = calendar.allowed
         link.logEvents = logEvents
+        link.onCrown = { [weak self] direction in
+            guard let self, self.crownPaging else { return }
+            self.buttonPressed(direction)
+        }
         buttons.onPress = { [weak self] direction in self?.buttonPressed(direction) }
         popFactDue = Date().addingTimeInterval(max(1, popFactMinutes) * 60)
         applyKeepAwake()

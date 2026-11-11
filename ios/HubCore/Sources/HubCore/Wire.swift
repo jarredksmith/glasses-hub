@@ -209,3 +209,36 @@ public enum CaptionWire {
         Envelope.encode(type: stopType, json: ["sid": sid, "reason_code": 10, "text": ""])
     }
 }
+
+/// Things the glasses announce about themselves, read from their usage reports (channel 15, type 76).
+/// The reports aren't meant as a control channel, but on firmware 1.0.6.11 they arrive within about a
+/// second of the action, which is fast enough to turn pages with.
+public struct GlassesReport: Equatable {
+    public enum Action: Equatable {
+        /// The crown was turned on a page with nothing to scroll. The report doesn't say which way.
+        case crownTurn
+        /// One click of the crown.
+        case crownClick
+    }
+    public var action: Action?
+    public var battery: Int?
+
+    public static let business: UInt8 = 15
+
+    public init?(_ frame: GlassesFrame) {
+        guard frame.business == GlassesReport.business, frame.isPlain, let message = Envelope(frame.payload),
+              message.json["cmd"] as? String == "analytics_log" else { return nil }
+        func dict(_ value: Any?) -> [String: Any]? {
+            if let d = value as? [String: Any] { return d }
+            // some firmware packs the inner part as JSON inside a string
+            if let s = value as? String, let d = try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? [String: Any] { return d }
+            return nil
+        }
+        guard let data = dict(dict(message.json["payload"])?["data"]), let extras = dict(data["extras"]) else { return nil }
+        if extras["action_type"] as? String == "scroll" { action = .crownTurn }
+        else if extras["event_name"] as? String == "KEY_PRESS" { action = .crownClick }
+        battery = Envelope.int(extras["battery_level"]) ?? Envelope.int(extras["bat"])
+        if let level = battery, !(0...100).contains(level) { battery = nil }
+        if action == nil, battery == nil { return nil }
+    }
+}
