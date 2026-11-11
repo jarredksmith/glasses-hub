@@ -237,7 +237,7 @@ final class HubModel: ObservableObject {
         volumePaging = bool("volumePaging", true)
         logEvents = bool("logEvents", false)
         crownPaging = bool("crownPaging", true)
-        crownBack = bool("crownBackSelects", true)
+        crownBack = false       // off while testing whether the scroll-room line is what stops crown clicks
         headPaging = bool("headPaging", false)
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
@@ -467,7 +467,7 @@ final class HubModel: ObservableObject {
         }
         if listEnd {
             listEnd = false
-            if next { restartList() } else { openMenu() }
+            restartList()
             return
         }
         let morePages = pageCount > 1 && pageIndex < pageCount - 1
@@ -552,6 +552,9 @@ final class HubModel: ObservableObject {
         }
     }
     private func openMenu() {
+        // The on-glasses app menu is switched off: apps are chosen on the phone. Kept as a no-op so the
+        // places that used to open it simply do nothing.
+        return
         menuIndex = Program.allCases.firstIndex(of: program) ?? 0
         menuOpen = true
     }
