@@ -22,8 +22,10 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     @Published private(set) var glassesName = ""
     /// The glasses' battery, when they've mentioned it.
     @Published private(set) var battery: Int?
-    /// The crown was turned (+1) or clicked (-1) while this app's page was up.
+    /// The crown was turned forward (+1), turned back (-1) or clicked (0) while this app's page was up.
     var onCrown: ((Int) -> Void)?
+    private var lastDepth = 0
+    private var lastBack = Date.distantPast
     /// The wearer tilted their head up while this app's page was up.
     var onHeadRaise: (() -> Void)?
     private var lastRaise = Date.distantPast
@@ -196,6 +198,7 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
             case .subscribe:
                 if let peripheral, let incoming { peripheral.setNotifyValue(true, for: incoming) }
             case .write(let packet, let isText):
+                if isText { lastDepth = 0 }             // a new screen starts at the bottom again
                 send(packet, isText: isText)
             case .log(let line):
                 note(line)
@@ -263,8 +266,12 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
                     case .crownTurn:
                         // one notch of the crown reports twice; treat reports close together as one turn
                         if Date().timeIntervalSince(lastTurn) > 0.3 { onCrown?(1) }
-                        lastTurn = Date()
-                    case .crownClick: onCrown?(-1)
+                        lastTurn = Date(); lastDepth = 0
+                    case .crownBack(let depth):
+                        // only the first line scrolled back counts; a spin shouldn't flip several pages
+                        if depth > lastDepth, Date().timeIntervalSince(lastBack) > 0.7 { lastBack = Date(); onCrown?(-1) }
+                        lastDepth = depth
+                    case .crownClick: onCrown?(0)
                     case .headRaise:
                         if Date().timeIntervalSince(lastRaise) > 1.5 { onHeadRaise?() }
                         lastRaise = Date()
