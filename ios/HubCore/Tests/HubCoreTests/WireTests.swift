@@ -254,7 +254,6 @@ final class GlassesReportTests: XCTestCase {
         return GlassesFrame(sequence: 1, business: business, payload: Envelope.encode(type: type, json: object))
     }
     // shapes taken from a log of the owner's glasses (Strix OS 1.0.6.11), identifiers removed
-    let back = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"action_result":"success","action_type":"scroll","history_depth":3}}}}"#
     let scroll = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"action_result":"fail","action_type":"scroll","history_depth":0},"packageName":"com.rayneo.liteos","type":"3CE0FD898F"},"mode":0,"value":0}}"#
     let click = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"battery_level":46,"event_id":20,"event_name":"KEY_PRESS","result":"no_transition"},"packageName":"com.rayneo.liteos.state_machine"},"mode":0}}"#
     let double = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"battery_level":46,"event_id":68,"event_name":"KEY_DOUBLE_CLICK"}}}}"#
@@ -263,9 +262,6 @@ final class GlassesReportTests: XCTestCase {
 
     func testCrownAndBattery() {
         XCTAssertEqual(GlassesReport(frame(scroll))?.action, .crownTurn)
-        XCTAssertEqual(GlassesReport(frame(back))?.action, .crownBack(depth: 3))
-        XCTAssertEqual(TextLayout.withScrollRoom(["a", "b", "c"], rows: 7, marker: "^"), ["^", "\u{3000}", "\u{3000}", "a", "b", "c", "\u{3000}", "\u{3000}"])
-        XCTAssertEqual(TextLayout.withScrollRoom((1...9).map(String.init), rows: 5, marker: "^").count, 6)
         XCTAssertEqual(GlassesReport(frame(click))?.action, .crownClick)
         XCTAssertEqual(GlassesReport(frame(click))?.battery, 46)
         XCTAssertNil(GlassesReport(frame(double))?.action)                 // a double click belongs to the assistant

@@ -35,16 +35,11 @@ struct SettingsView: View {
                     Stepper(model.pageSeconds == 0 ? "Pages turn only when I press a button" : "Turn the page every \(Int(model.pageSeconds)) seconds",
                             value: $model.pageSeconds, in: 0...60, step: 2)
                     Toggle("Navigate with the crown", isOn: $model.crownPaging)
-                    if model.crownPaging {
-                        Toggle("Turn back to select", isOn: $model.crownBack)
-                        Text("Turn forward for next, turn back to open or select. The glasses only pass on a crown click now and then, so the click can't be relied on.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
                     Toggle("Navigate with the volume buttons", isOn: $model.volumePaging)
                     Toggle("Tilt my head up for \"next\" (experimental)", isOn: $model.headPaging)
                     Toggle("Let the crown scroll long text instead (experimental)", isOn: $model.crownScroll)
                 } header: { Text("Long text") } footer: {
-                    Text("Turn the crown forward for the next thing (page, headline, game, event or message) and back for the previous one. Click it to open what's showing, to go back when something is open, or otherwise to bring up the menu of apps. Lists end in a stop that also leads to the menu. Double-click and hold still belong to the glasses.\n\nThe volume buttons do the same with the display on: up is a turn, down is a click. They work with the phone locked, from the phone or a Bluetooth ring that sends them, and your volume is put back after each press.\n\nAnything taller than the screen is split into pages that turn by themselves, because the glasses jump back to the end of scrolled text after a few seconds. The experiment sends reader and news text in one piece, marked as finished, which may stop that jump. It applies the next time the display starts.")
+                    Text("Turn the crown (either way) for the next thing: page, headline, game, event or message. Click it to open what's showing, to go back when something is open, or otherwise to bring up the menu of apps. Lists end in a stop that also leads to the menu. Double-click and hold still belong to the glasses.\n\nThe volume buttons do the same with the display on: up is a turn, down is a click. They work with the phone locked, from the phone or a Bluetooth ring that sends them, and your volume is put back after each press.\n\nAnything taller than the screen is split into pages that turn by themselves, because the glasses jump back to the end of scrolled text after a few seconds. The experiment sends reader and news text in one piece, marked as finished, which may stop that jump. It applies the next time the display starts.")
                 }
 
                 Section {

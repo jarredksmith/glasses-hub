@@ -133,17 +133,6 @@ public enum TextLayout {
         return ascii && line.count <= screen.wideColumns ? wide(line) : fit(line, width: screen.columns)
     }
 
-    /// A screenful with one extra line above it, so the caption page has something to scroll back to.
-    /// The glasses show the last `rows` lines, so what the wearer sees is unchanged (short screens stay
-    /// centred); but a turn of the crown backwards now scrolls and is reported as such, where a turn
-    /// forwards at the bottom is reported as failing. That difference is how the app tells the two apart.
-    public static func withScrollRoom(_ lines: [String], rows: Int, marker: String) -> [String] {
-        let shown = Array(lines.prefix(rows))
-        let free = rows - shown.count
-        let blank = "\u{3000}"
-        return [marker] + Array(repeating: blank, count: free / 2) + shown + Array(repeating: blank, count: free - free / 2)
-    }
-
     /// Split lines into pages of `rows`, each page ending "(2/5)" style when there is more than one.
     public static func pages(_ lines: [String], rows: Int) -> [[String]] {
         guard lines.count > rows, rows > 1 else { return [lines] }

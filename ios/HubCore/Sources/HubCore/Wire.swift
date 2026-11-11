@@ -215,10 +215,8 @@ public enum CaptionWire {
 /// second of the action, which is fast enough to turn pages with.
 public struct GlassesReport: Equatable {
     public enum Action: Equatable {
-        /// The crown was turned forward at the bottom of the page: the glasses report a scroll that failed.
+        /// The crown was turned on a page with nothing to scroll. The report doesn't say which way.
         case crownTurn
-        /// The crown was turned back and the page scrolled up, to this many lines above the bottom.
-        case crownBack(depth: Int)
         /// One click of the crown.
         case crownClick
         /// The wearer tilted their head up far enough to wake the screen.
@@ -239,10 +237,7 @@ public struct GlassesReport: Equatable {
             return nil
         }
         guard let data = dict(dict(message.json["payload"])?["data"]), let extras = dict(data["extras"]) else { return nil }
-        if extras["action_type"] as? String == "scroll" {
-            let depth = Envelope.int(extras["history_depth"]) ?? 0
-            action = extras["action_result"] as? String == "success" && depth > 0 ? .crownBack(depth: depth) : .crownTurn
-        }
+        if extras["action_type"] as? String == "scroll" { action = .crownTurn }
         else if extras["event_name"] as? String == "KEY_PRESS" { action = .crownClick }
         else if extras["trigger_source"] as? String == "raise_head", extras["screen_state"] as? String == "screen_on" { action = .headRaise }
         battery = Envelope.int(extras["battery_level"]) ?? Envelope.int(extras["bat"])
