@@ -315,7 +315,7 @@ final class HubModel: ObservableObject {
         metroBPM = d.object(forKey: "metroBPM") as? Int ?? 100
         metroBeats = d.object(forKey: "metroBeats") as? Int ?? 4
         metroVisual = d.object(forKey: "metroVisual") as? Bool ?? true
-        metroLeadMs = d.object(forKey: "metroLeadMs") as? Int ?? 150
+        metroLeadMs = d.object(forKey: "metroLeadMs") as? Int ?? 100
         speedWPM = d.object(forKey: "speedWPM") as? Int ?? 200
         speedChunk = d.object(forKey: "speedChunk") as? Int ?? 2
         pickerMode = PickerMode(rawValue: d.string(forKey: "pickerMode") ?? "") ?? .coin
