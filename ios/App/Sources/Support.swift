@@ -133,6 +133,24 @@ enum Feeds {
         return text.utf8.count > 60_000 ? String(text.prefix(60_000)) : text
     }
 
+    /// The newest messages matching a Gmail search, read with a key from GoogleAuth. `known` are messages
+    /// already fetched, which aren't asked for again. Nil means Google couldn't be reached or said no.
+    static func mail(token: String, query: String, known: [String: MailMessage]) async -> [MailMessage]? {
+        func get(_ url: URL) async -> Data? {
+            var request = URLRequest(url: url)
+            request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+            guard let (data, response) = try? await session.data(for: request), (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            return data
+        }
+        guard let listURL = Mail.listURL(query: query), let listData = await get(listURL) else { return nil }
+        var out = [MailMessage]()
+        for id in Mail.parseList(listData) {
+            if let have = known[id] { out.append(have); continue }
+            if let url = Mail.messageURL(id), let data = await get(url), let message = Mail.parseMessage(data) { out.append(message) }
+        }
+        return out
+    }
+
     static func trivia(count: Int) async -> [TriviaQuestion] {
         guard let data = await data(Trivia.feed(count: count)) else { return [] }
         return Trivia.parse(data)
@@ -163,6 +181,16 @@ final class CalendarReader {
 
     func askPermission() async -> Bool {
         (try? await store.requestFullAccessToEvents()) ?? false
+    }
+
+    /// Events from now through the next `days` days, soonest first.
+    func upcoming(days: Int, now: Date = Date()) -> [AgendaItem] {
+        guard allowed, let end = Calendar.current.date(byAdding: .day, value: days, to: now) else { return [] }
+        return store.events(matching: store.predicateForEvents(withStart: now.addingTimeInterval(-3600), end: end, calendars: nil))
+            .filter { $0.endDate > now }
+            .sorted { $0.startDate < $1.startDate }
+            .prefix(40)
+            .map { AgendaItem(title: $0.title ?? "Event", start: $0.startDate, end: $0.endDate, allDay: $0.isAllDay, place: $0.location, notes: $0.notes) }
     }
 
     func today(now: Date = Date()) -> [AgendaItem] {

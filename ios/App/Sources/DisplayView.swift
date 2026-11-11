@@ -16,6 +16,13 @@ struct DisplayView: View {
                     programPicker
                     ProgramControls(program: model.program)
                     PageControls()
+                    HStack {
+                        Button { model.input(.next) } label: { Label("Turn", systemImage: "arrow.clockwise") }
+                        Button { model.input(.select) } label: { Label("Click", systemImage: "hand.tap") }
+                        Spacer()
+                        Text("Same as the crown").font(.footnote).foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.bordered)
                     sendBox
                 }
                 .padding()

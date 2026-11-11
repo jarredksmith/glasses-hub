@@ -5,14 +5,14 @@ import HubCore
 
 /// What can be on the glasses.
 enum Program: String, CaseIterable, Identifiable {
-    case dashboard, scores, news, trivia, facts, timer, weather, agenda, reader, message
+    case dashboard, scores, news, mail, agenda, weather, trivia, facts, timer, reader, message
     var id: String { rawValue }
     var title: String {
         switch self {
         case .dashboard: return "Dashboard"; case .scores: return "Scoreboard"; case .trivia: return "Trivia host"
         case .facts: return "Odd facts"; case .timer: return "Timer"; case .weather: return "Weather"
         case .agenda: return "Calendar"; case .reader: return "Reader"; case .message: return "Message"
-        case .news: return "News"
+        case .news: return "News"; case .mail: return "Mail"
         }
     }
     var icon: String {
@@ -20,13 +20,14 @@ enum Program: String, CaseIterable, Identifiable {
         case .dashboard: return "square.grid.2x2"; case .scores: return "sportscourt"; case .trivia: return "questionmark.bubble"
         case .facts: return "lightbulb"; case .timer: return "timer"; case .weather: return "cloud.sun"
         case .agenda: return "calendar"; case .reader: return "text.alignleft"; case .message: return "text.bubble"
-        case .news: return "newspaper"
+        case .news: return "newspaper"; case .mail: return "envelope"
         }
     }
     var blurb: String {
         switch self {
         case .dashboard: return "Time, score, weather and your next event on one screen."
         case .scores: return "Live score, box score by period, or the whole league as a table."
+        case .mail: return "Your Gmail inbox: scroll the list, click to read one."
         case .news: return "Headlines that turn by themselves, and full stories a page at a time."
         case .trivia: return "You read the question off your glasses; the answer follows."
         case .facts: return "A new surprising fact every few minutes."
@@ -80,6 +81,7 @@ final class HubModel: ObservableObject {
     let pc = PCLink()
     private let keepAwake = KeepAwake()
     private let buttons = VolumeButtons()
+    let google = GoogleAuth()
     private let calendar = CalendarReader()
     private let defaults = UserDefaults.standard
 
@@ -97,6 +99,8 @@ final class HubModel: ObservableObject {
     @Published var glyphStyle: GlyphStyle { didSet { defaults.set(glyphStyle.rawValue, forKey: "glyphStyle") } }
     @Published var pageSeconds: Double { didSet { defaults.set(pageSeconds, forKey: "pageSeconds") } }
     @Published var volumePaging: Bool { didSet { defaults.set(volumePaging, forKey: "volumePaging"); applyKeepAwake() } }
+    @Published var gmailClientID: String { didSet { defaults.set(gmailClientID, forKey: "gmailClientID") } }
+    @Published var mailQuery: String { didSet { defaults.set(mailQuery, forKey: "mailQuery"); mailDue = .distantPast } }
     @Published var crownPaging: Bool { didSet { defaults.set(crownPaging, forKey: "crownPaging") } }
     @Published var logEvents: Bool { didSet { defaults.set(logEvents, forKey: "logEvents"); link.logEvents = logEvents } }
     @Published var crownScroll: Bool { didSet { defaults.set(crownScroll, forKey: "crownScroll") } }
@@ -160,6 +164,18 @@ final class HubModel: ObservableObject {
     @Published private(set) var news: [NewsItem] = []
     @Published private(set) var newsIndex = 0
     @Published private(set) var newsNote = ""
+    /// The on-glasses app menu is up.
+    @Published private(set) var menuOpen = false
+    @Published private(set) var menuIndex = 0
+    /// The current list has been scrolled past its last item, to the "end of list" stop.
+    @Published private(set) var listEnd = false
+    @Published private(set) var mail: [MailMessage] = []
+    @Published private(set) var mailIndex = 0
+    @Published private(set) var mailOpen = false
+    @Published private(set) var mailNote = ""
+    @Published private(set) var mailSignedIn = false
+    /// Events over the coming week, for stepping through one at a time.
+    @Published private(set) var week: [AgendaItem] = []
     /// The story being read in full, if any.
     @Published private(set) var reading: NewsItem?
     @Published private(set) var readingNote = ""
@@ -174,6 +190,9 @@ final class HubModel: ObservableObject {
     private var watched = [String: Game]()
     private var pager = AutoPager()
     private var popupOpen = false
+    private var agendaStep = 0
+    private var weatherStep: Int?
+    private var mailDue = Date.distantPast
     private var popFactDue = Date.distantFuture
     /// Alerts queued for a pop-up that hasn't opened yet, kept so they can go out as notifications if it can't.
     private var unshown = [(title: String, body: String)]()
@@ -210,6 +229,8 @@ final class HubModel: ObservableObject {
         volumePaging = bool("volumePaging", true)
         logEvents = bool("logEvents", false)
         crownPaging = bool("crownPaging", true)
+        gmailClientID = d.string(forKey: "gmailClientID") ?? ""
+        mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
         scoresView = ScoresView(rawValue: d.string(forKey: "scoresView") ?? "") ?? .auto
         pinnedGame = d.string(forKey: "pinnedGame") ?? ""
         weatherView = WeatherView(rawValue: d.string(forKey: "weatherView") ?? "") ?? .cycle
@@ -244,11 +265,15 @@ final class HubModel: ObservableObject {
 
         calendarAllowed = calendar.allowed
         link.logEvents = logEvents
+        mailSignedIn = google.signedIn
         link.onCrown = { [weak self] direction in
-            guard let self, self.crownPaging else { return }
-            self.buttonPressed(direction)
+            guard let self, self.crownPaging, self.link.isShowing else { return }
+            self.input(direction > 0 ? .next : .select)
         }
-        buttons.onPress = { [weak self] direction in self?.buttonPressed(direction) }
+        buttons.onPress = { [weak self] direction in
+            guard let self, self.link.isShowing else { return }
+            self.input(direction > 0 ? .next : .select)
+        }
         popFactDue = Date().addingTimeInterval(max(1, popFactMinutes) * 60)
         applyKeepAwake()
         link.onEnded = { [weak self] reason in self?.displayEnded(reason) }
@@ -325,6 +350,8 @@ final class HubModel: ObservableObject {
         if program == .facts { factDue = .distantPast }
         if program == .agenda || program == .dashboard { agendaDue = .distantPast }
         pager = AutoPager(); pagesPaused = false
+        listEnd = false; agendaStep = 0; weatherStep = nil; mailOpen = false
+        if program == .mail { mailDue = .distantPast }
     }
 
     // MARK: The loop
@@ -362,7 +389,8 @@ final class HubModel: ObservableObject {
             card = currentCard(now: now)
             // Anything taller than the screen is shown a page at a time. Reading stops on the last page;
             // everything else starts over.
-            let readingText = program == .reader || (program == .news && reading != nil)
+            let readingText = !menuOpen && !listEnd && (program == .reader || (program == .news && reading != nil) || (program == .mail && mailOpen)
+                                                        || (program == .agenda && agendaStep >= 2))
             // crown mode only works for text short enough to send in one piece
             if !(crownScroll && readingText && card.lines.joined(separator: "\n").utf8.count <= 3500) {
                 pager.paused = pagesPaused
@@ -380,24 +408,86 @@ final class HubModel: ObservableObject {
         }
     }
 
-    /// A volume button (or scroll ring) was pressed: forward is +1, back is -1. Turns the page when there
-    /// are pages; otherwise does the obvious next thing for what's showing.
-    private func buttonPressed(_ direction: Int) {
-        guard link.isShowing else { return }
-        if pageCount > 1, !(direction > 0 && pageIndex >= pageCount - 1 && program == .news) {
-            pageStep(direction)
+    // MARK: Crown and button navigation
+
+    enum Input { case next, select }
+
+    /// One step of navigation, from the crown (turn = next, click = select), the volume buttons (up = next,
+    /// down = select) or the two buttons on the Display tab.
+    ///
+    /// The scheme is the same everywhere: "next" moves to the next thing (page, headline, game, event,
+    /// message); "select" opens what's showing if it can be opened, goes back if something is open, and
+    /// otherwise brings up the menu of apps. Lists end in a stop that also leads to the menu.
+    func input(_ what: Input) {
+        let next = what == .next
+        if menuOpen {
+            let all = Program.allCases
+            if next { menuIndex = (menuIndex + 1) % all.count } else { menuOpen = false; program = all[menuIndex] }
             return
         }
+        if listEnd {
+            listEnd = false
+            if next { restartList() } else { openMenu() }
+            return
+        }
+        let morePages = pageCount > 1 && pageIndex < pageCount - 1
         switch program {
         case .news:
-            if reading != nil, direction < 0 { stopReading() } else { newsStep(direction) }
+            if reading != nil {
+                if !next { stopReading() } else if morePages { pageStep(1) } else { stopReading(); advance(&newsIndex, count: news.count) }
+            } else if next { advance(&newsIndex, count: news.count); headlineTurnedAt = Date() } else { readCurrent() }
+        case .mail:
+            if mailOpen {
+                if !next { mailOpen = false } else if morePages { pageStep(1) } else { mailOpen = false; advance(&mailIndex, count: mail.count) }
+            } else if next { advance(&mailIndex, count: mail.count) } else if !mail.isEmpty { mailOpen = true; pageRestart() } else { openMenu() }
+        case .scores:
+            if scoresView == .league {
+                if !next { openMenu() } else if morePages { pageStep(1) } else { pageRestart() }
+            } else if next {
+                let list = Scoreboard.ordered(games, teams: followed)
+                let at = list.firstIndex { $0.id == game?.id } ?? -1
+                if at + 1 >= list.count { listEnd = true } else { pinnedGame = list[at + 1].id }
+            } else { scoresView = scoresView == .box ? .game : .box }
+        case .agenda:
+            if !next { if agendaStep == 0 { openMenu() } else { agendaStep = 0 } }
+            else if morePages { pageStep(1) }
+            else if agendaStep >= 1 + week.count { listEnd = true }
+            else { agendaStep += 1; pageRestart() }
+        case .weather:
+            if next { weatherStep = (weatherStep ?? 0) + 1 } else { openMenu() }
         case .trivia:
-            if direction > 0 { if round?.phase == .question { triviaReveal() } else { triviaNext() } }
+            if !next { openMenu() }
+            else if round == nil || round?.phase == .done { startTrivia() }
+            else if round?.phase == .question { triviaReveal() } else { triviaNext() }
         case .facts:
-            if direction > 0 { nextFact() }
+            if !next { openMenu() } else if morePages { pageStep(1) } else { nextFact() }
+        case .reader:
+            if !next { openMenu() } else if morePages { pageStep(1) } else { pageRestart() }
+        case .timer:
+            if !next { openMenu() } else if timer.isRunning { timerPause() } else { timerStart() }
+        case .dashboard, .message:
+            openMenu()
+        }
+    }
+
+    private func advance(_ index: inout Int, count: Int) {
+        if count == 0 || index >= count - 1 { listEnd = count > 0 } else { index += 1 }
+        pageRestart()
+    }
+    private func restartList() {
+        switch program {
+        case .news: newsIndex = 0; headlineTurnedAt = Date()
+        case .mail: mailIndex = 0
+        case .scores: pinnedGame = ""
+        case .agenda: agendaStep = 0
         default: break
         }
     }
+    private func openMenu() {
+        menuIndex = Program.allCases.firstIndex(of: program) ?? 0
+        menuOpen = true
+    }
+    func closeMenu() { menuOpen = false; listEnd = false }
 
     func pageStep(_ by: Int) { pager.step(by, now: Date().timeIntervalSinceReferenceDate) }
     func pageRestart() { pager.restart(now: Date().timeIntervalSinceReferenceDate); pagesPaused = false }
@@ -421,7 +511,23 @@ final class HubModel: ObservableObject {
             let shown = pages.count - 1 - Int(testCardsUntil.timeIntervalSince(now) / 12)
             return Card(pages[max(0, min(pages.count - 1, shown))])
         }
+        if menuOpen { return AppMenu.card(titles: Program.allCases.map(\.title), selected: menuIndex, screen: screen, glyphs: glyphs) }
+        if listEnd {
+            let what: String
+            switch program { case .news: what = "headlines"; case .mail: what = "the inbox"; case .scores: what = "games"; case .agenda: what = "events"; default: what = "the list" }
+            return AppMenu.endCard(of: what)
+        }
         switch program {
+        case .mail:
+            guard mailSignedIn else { return Card(["Mail", "Connect Gmail in the app,", "under Apps > Mail."]) }
+            guard !mail.isEmpty else { return Card(["Mail", mailNote.isEmpty ? "Checking your inbox…" : mailNote]) }
+            let index = min(mailIndex, mail.count - 1)
+            if mailOpen {
+                let m = mail[index]
+                return Card([TextLayout.fit("From " + m.from, width: screen.columns)] + TextLayout.wrap(m.subject, width: screen.columns) + [""]
+                            + lines(of: m.body.isEmpty ? m.preview : m.body) + ["- end -"], scrolls: true)
+            }
+            return Mail.listCard(mail[index], index: index, count: mail.count, screen: screen, now: now, glyphs: glyphs)
         case .dashboard:
             var lines = [String]()
             func add(_ mark: String, _ text: String) { lines.append(rich ? mark + " " + TextLayout.fit(text, width: screen.columns - 3) : text) }
@@ -474,10 +580,18 @@ final class HubModel: ObservableObject {
             if weatherView == .cycle || weatherView == .now { views.append(weather.card(screen: screen)) }
             if weatherView == .cycle || weatherView == .hours, let hours = weather.hoursCard(screen: screen, glyphs: glyphs) { views.append(hours) }
             if weatherView == .cycle || weatherView == .week, let week = weather.weekCard(screen: screen, glyphs: glyphs) { views.append(week) }
+            if let step = weatherStep {           // stepping through by hand: every view, in order
+                let all = [weather.card(screen: screen), weather.hoursCard(screen: screen, glyphs: glyphs), weather.weekCard(screen: screen, glyphs: glyphs)].compactMap { $0 }
+                return all[step % all.count]
+            }
             return views.isEmpty ? weather.card(screen: screen) : views[turn(views.count, now: now)]
         case .agenda:
             let busy = Set(agenda.map { Calendar.current.component(.day, from: $0.start) })
             let month = Agenda.monthCard(now: now, screen: screen, glyphs: glyphs, busyDays: busy)
+            if agendaStep == 1 { return month }
+            if agendaStep >= 2, week.indices.contains(agendaStep - 2) {
+                return Agenda.detailCard(week[agendaStep - 2], index: agendaStep - 2, count: week.count, screen: screen, now: now, glyphs: glyphs)
+            }
             if agendaView == .month { return month }
             if !calendarAllowed { return agendaView == .cycle ? month : Card(["Calendar", "Allow calendar access in the app."]) }
             let list = Agenda.listCard(agenda, screen: screen, now: now, glyphs: glyphs)
@@ -529,6 +643,8 @@ final class HubModel: ObservableObject {
             calendarAllowed = calendar.allowed
             let fresh = calendar.today(now: now)
             if fresh != agenda { agenda = fresh }
+            let ahead = calendar.upcoming(days: 7, now: now)
+            if ahead != week { week = ahead }
         }
         let wantsNews = program == .news || (program == .dashboard && dashNews)
         if wantsNews, now >= newsDue, fetching.insert("news").inserted {
@@ -550,7 +666,30 @@ final class HubModel: ObservableObject {
                 }
             }
         }
-        if program == .news, reading == nil, headlineSeconds > 0, news.count > 1, now.timeIntervalSince(headlineTurnedAt) >= headlineSeconds {
+        if program == .mail, mailSignedIn, now >= mailDue, fetching.insert("mail").inserted {
+            mailDue = now.addingTimeInterval(5 * 60)
+            let query = mailQuery
+            let known = Dictionary(mail.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            Task {
+                defer { self.fetching.remove("mail") }
+                guard let token = await self.google.accessToken() else {
+                    self.mailSignedIn = self.google.signedIn
+                    self.mailNote = self.mailSignedIn ? "Couldn't reach Google." : "Gmail needs you to sign in again."
+                    self.mailDue = Date().addingTimeInterval(60)
+                    return
+                }
+                guard let fresh = await Feeds.mail(token: token, query: query, known: known) else {
+                    if self.mail.isEmpty { self.mailNote = "Couldn't get your mail from Google." }
+                    self.mailDue = Date().addingTimeInterval(60)
+                    return
+                }
+                let current = self.mail.indices.contains(self.mailIndex) ? self.mail[self.mailIndex].id : nil
+                self.mail = fresh
+                self.mailNote = fresh.isEmpty ? "No messages match." : ""
+                self.mailIndex = current.flatMap { id in fresh.firstIndex { $0.id == id } } ?? 0
+            }
+        }
+        if program == .news, reading == nil, !menuOpen, !listEnd, headlineSeconds > 0, news.count > 1, now.timeIntervalSince(headlineTurnedAt) >= headlineSeconds {
             newsIndex = (newsIndex + 1) % news.count; headlineTurnedAt = now
         }
         if popUps, popFactMinutes > 0, now >= popFactDue, !(link.isRunning && !popupOpen), fetching.insert("popfact").inserted {
@@ -727,6 +866,23 @@ final class HubModel: ObservableObject {
         guard let reading else { return "" }
         let body = articles[reading.id] ?? ""
         return reading.title + "\n\n" + (body.isEmpty ? reading.summary : body)
+    }
+
+    // MARK: Mail
+
+    func mailSignIn() async {
+        mailNote = "Opening Google's sign-in…"
+        if let problem = await google.signIn(clientID: gmailClientID) { mailNote = problem }
+        else { mailNote = ""; mailDue = .distantPast }
+        mailSignedIn = google.signedIn
+    }
+    func mailSignOut() { google.signOut(); mailSignedIn = false; mail = []; mailNote = "" }
+    func refreshMail() { mailDue = .distantPast }
+    func openMail(_ message: MailMessage) {
+        if let index = mail.firstIndex(where: { $0.id == message.id }) { mailIndex = index }
+        if program != .mail { program = .mail }
+        menuOpen = false; listEnd = false; mailOpen = true
+        pageRestart()
     }
 
     func readCurrent() { if news.indices.contains(newsIndex) { read(news[newsIndex]) } }

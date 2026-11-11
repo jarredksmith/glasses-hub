@@ -43,6 +43,7 @@ struct ProgramSettings: View {
             case .dashboard: dashboard
             case .scores: scores
             case .news: news
+            case .mail: mail
             case .trivia: trivia
             case .facts: facts
             case .timer: timer
@@ -185,6 +186,44 @@ struct ProgramSettings: View {
                     }
                 }
                 .foregroundStyle(.primary)
+            }
+        }
+    }
+
+    @ViewBuilder private var mail: some View {
+        Section {
+            if model.mailSignedIn {
+                Label("Connected to Gmail (read-only)", systemImage: "checkmark.circle").foregroundStyle(.secondary)
+                Button("Disconnect", role: .destructive) { model.mailSignOut() }
+            } else {
+                TextField("Google client ID", text: $model.gmailClientID)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().font(.system(.footnote, design: .monospaced))
+                Button("Sign in with Google") { Task { await model.mailSignIn() } }
+                    .disabled(model.gmailClientID.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            if !model.mailNote.isEmpty { Text(model.mailNote).font(.footnote).foregroundStyle(.secondary) }
+        } header: { Text("Gmail") } footer: {
+            Text("The app asks Google for permission to read your mail and nothing else: it can't send, delete or change anything. You sign in on Google's own page. Mail goes from Google to this phone to your glasses, and nowhere else.")
+        }
+        Section {
+            TextField("in:inbox category:primary", text: $model.mailQuery).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Button("Refresh now") { model.refreshMail() }
+        } header: { Text("Which mail") } footer: {
+            Text("Any Gmail search works here: is:unread, from:someone, label:work. The newest 15 matches are listed, refreshed every 5 minutes while Mail is showing.")
+        }
+        if model.mailSignedIn {
+            Section("Inbox") {
+                if model.mail.isEmpty { Text("Nothing yet.").foregroundStyle(.secondary) }
+                ForEach(model.mail) { message in
+                    Button { model.openMail(message) } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(message.from).fontWeight(message.unread ? .semibold : .regular)
+                            Text(message.subject).font(.subheadline)
+                            Text(News.age(message.date, now: Date())).font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                }
             }
         }
     }

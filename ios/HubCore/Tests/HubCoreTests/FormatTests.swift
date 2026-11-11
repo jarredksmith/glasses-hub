@@ -306,3 +306,53 @@ final class NewsTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(NewsSource.builtIn.count, 4)
     }
 }
+
+final class MailTests: XCTestCase {
+    static func b64(_ s: String) -> String {
+        Data(s.utf8).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+    }
+    func testParsePlainTextMessage() throws {
+        let text = "Hi Jarred,\r\n\r\nThe deck is ready. See https://example.com/a/very/long/link/that/goes/on/and/on for the file.\r\n\r\n\r\nThanks\r\n\r\nOn Tue, Nov 10, 2026 at 3:00 PM Someone <s@example.com> wrote:\r\n> old text\r\n"
+        let json = """
+        {"id":"abc123","labelIds":["INBOX","UNREAD"],"snippet":"Hi Jarred, The deck is ready &amp; waiting","internalDate":"1794350000000",
+         "payload":{"mimeType":"multipart/alternative","headers":[{"name":"From","value":"\\"Pat Lee\\" <pat@example.com>"},{"name":"Subject","value":"Deck for Thursday"}],
+           "parts":[{"mimeType":"text/plain","body":{"data":"\(Self.b64(text))"}},{"mimeType":"text/html","body":{"data":"\(Self.b64("<p>ignored</p>"))"}}]}}
+        """
+        let m = try XCTUnwrap(Mail.parseMessage(Data(json.utf8)))
+        XCTAssertEqual(m.from, "Pat Lee"); XCTAssertEqual(m.subject, "Deck for Thursday"); XCTAssertTrue(m.unread)
+        XCTAssertEqual(m.preview, "Hi Jarred, The deck is ready & waiting")
+        XCTAssertEqual(m.body, "Hi Jarred,\n\nThe deck is ready. See [link] for the file.\n\nThanks")      // quoted reply and long link gone
+        XCTAssertEqual(m.date, Date(timeIntervalSince1970: 1_794_350_000))
+        let card = Mail.listCard(m, index: 0, count: 12, screen: Screen(size: .small), now: Date(timeIntervalSince1970: 1_794_357_200), glyphs: Glyphs(.symbols))
+        XCTAssertEqual(Array(card.lines.prefix(3)), ["● Inbox 1/12 2h", "Pat Lee", "Deck for Thursday"])
+        let read = Mail.readCard(m, screen: Screen(size: .small))
+        XCTAssertEqual(read.lines.first, "From Pat Lee"); XCTAssertEqual(read.lines.last, "- end -")
+    }
+    func testParseHTMLOnlyMessageAndLists() throws {
+        let html = "<html><head><style>x{}</style></head><body><table><tr><td>Your order has shipped</td><td>Track it today</td></tr></table></body></html>"
+        let json = "{\"id\":\"z9\",\"snippet\":\"\",\"payload\":{\"mimeType\":\"text/html\",\"headers\":[{\"name\":\"from\",\"value\":\"orders@shop.example\"}],\"body\":{\"data\":\"\(Self.b64(html))\"}}}"
+        let m = try XCTUnwrap(Mail.parseMessage(Data(json.utf8)))
+        XCTAssertEqual(m.from, "orders@shop.example"); XCTAssertEqual(m.subject, "(no subject)"); XCTAssertFalse(m.unread)
+        XCTAssertEqual(m.body, "Your order has shipped Track it today")
+        XCTAssertEqual(Mail.parseList(Data("{\"messages\":[{\"id\":\"a\",\"threadId\":\"t\"},{\"id\":\"b\"}],\"resultSizeEstimate\":2}".utf8)), ["a", "b"])
+        XCTAssertTrue(Mail.parseList(Data("{\"resultSizeEstimate\":0}".utf8)).isEmpty)
+        XCTAssertNil(Mail.parseMessage(Data("{}".utf8)))
+        XCTAssertEqual(Mail.sender("<solo@example.com>"), "solo@example.com")
+        XCTAssertTrue(Mail.listURL(query: "in:inbox")!.absoluteString.contains("q=in:inbox"))
+        XCTAssertEqual(Mail.messageURL("../x?")?.path.hasSuffix("/messages/x"), true)
+    }
+    func testEventDetailAndMenu() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let item = AgendaItem(title: "Budget review", start: now.addingTimeInterval(1500), end: now.addingTimeInterval(5100), place: "Room 4", notes: "Bring the Q4 numbers.\n\n> quoted")
+        let card = Agenda.detailCard(item, index: 1, count: 6, screen: Screen(size: .small), now: now, glyphs: Glyphs(.symbols))
+        XCTAssertTrue(card.lines[0].hasPrefix("◆ Event 2/6"))
+        XCTAssertEqual(card.lines[1], "Budget review")
+        XCTAssertTrue(card.lines[2].hasSuffix("(in 25 min)"))
+        XCTAssertEqual(Array(card.lines.suffix(3)), ["At Room 4", "", "Bring the Q4 numbers."])
+        let menu = AppMenu.card(titles: (1...10).map { "App \($0)" }, selected: 7, screen: Screen(size: .large), glyphs: Glyphs(.symbols))
+        XCTAssertEqual(menu.lines.count, 5)
+        XCTAssertTrue(menu.lines.contains("→ App 8"))
+        XCTAssertEqual(AppMenu.card(titles: ["A", "B"], selected: 0, screen: Screen(size: .large)).lines[1], "＞ A")
+        XCTAssertEqual(AppMenu.endCard(of: "headlines").lines.count, 3)
+    }
+}

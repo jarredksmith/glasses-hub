@@ -27,6 +27,7 @@ published measurements.
 | Dashboard | Time and date, plus a line each for your team's score, the weather, your next event and the top headline |
 | Scoreboard | One game (score, clock, who has the ball, last play), its box score as a table by period, or every game in your leagues as a table. NFL, college football, NBA, WNBA, college basketball, MLB, NHL, MLS, Premier League |
 | News | Headlines from feeds you pick, turning by themselves; any story in full, a page at a time |
+| Mail | Your Gmail inbox, read-only: sender, subject and preview for each message, and the full text a page at a time |
 | Trivia host | The question, then the answer, on timers or when you tap |
 | Odd facts | A new fact every few minutes |
 | Timer | A countdown with a progress bar |
@@ -51,9 +52,11 @@ with the display on). If the display can't open, the alert goes out as a notific
 - **Symbols.** Dots, stars, arrows, squares and box lines from the old GB2312 set, which a Chinese-market
   display font should carry. Settings has three levels (plain, symbols, symbols plus shaded bars) and a
   test that puts every character used on the glasses.
-- **The crown turns pages.** The glasses' usage reports reach the phone about a second after a crown
-  turn or click (seen on Strix OS 1.0.6.11). A turn is "next page", a single click is "back". The reports
-  don't say which way the crown turned.
+- **The crown navigates.** The glasses' usage reports reach the phone about a second after a crown turn
+  or click (seen on Strix OS 1.0.6.11); they don't say which way the crown turned. So a turn is "next"
+  (page, headline, game, event, message) and a click is "select": open what's showing, go back if
+  something is open, otherwise bring up the on-glasses menu of apps. Lists end in a stop that also leads
+  to the menu.
 - **Buttons turn pages.** With the display on, the phone's volume buttons (or a Bluetooth ring that sends
   them) step pages forward and back, even with the phone locked. The volume is put back after each press.
 - **Teleprompter hand-off.** "Send to teleprompter" saves the text as a .txt file in this app's folder
@@ -76,6 +79,12 @@ notifications. The app tells the PC which case applies every 45 seconds.
 
 Apple push needs a key on the PC: an "Apple Push Notifications service" key (.p8) from the Apple Developer
 account, chosen once under Settings in the PC app. Without it, notes only arrive while the app is running.
+
+## Gmail
+
+Mail uses Google's API with read-only permission, signed in on Google's own page. It needs a Google
+"OAuth client ID" of the iOS kind for bundle ID `com.jarredsmith.glasseshub`, from a Google Cloud project
+with the Gmail API turned on; paste it under Apps > Mail. The sign-in key lives in the iPhone's Keychain.
 
 ## Code
 

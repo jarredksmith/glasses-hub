@@ -321,8 +321,9 @@ public struct AgendaItem: Equatable {
     public var end: Date
     public var allDay: Bool
     public var place: String?
-    public init(title: String, start: Date, end: Date, allDay: Bool = false, place: String? = nil) {
-        self.title = title; self.start = start; self.end = end; self.allDay = allDay; self.place = place
+    public var notes: String?
+    public init(title: String, start: Date, end: Date, allDay: Bool = false, place: String? = nil, notes: String? = nil) {
+        self.title = title; self.start = start; self.end = end; self.allDay = allDay; self.place = place; self.notes = notes
     }
 }
 
