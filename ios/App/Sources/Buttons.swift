@@ -11,6 +11,14 @@ import MediaPlayer
 @MainActor
 final class VolumeButtons: NSObject {
     var onPress: ((Int) -> Void)?
+    /// Called once when a button is held down. Only looked for when `detectHolds` is on, because
+    /// telling a hold from a press means waiting a moment before a press counts.
+    var onHold: ((Int) -> Void)?
+    var detectHolds = false
+    private var pending: Task<Void, Never>?
+    private var pendingDirection = 0
+    private var holding = 0
+    private var lastChange = Date.distantPast
     private var watch: NSKeyValueObservation?
     private var volumeView: MPVolumeView?
     private var resting: Float = 0.5
@@ -35,8 +43,29 @@ final class VolumeButtons: NSObject {
 
     private func changed(to level: Float) {
         guard Date() >= ignoreUntil, abs(level - resting) > 0.001 else { return }
-        onPress?(level > resting ? 1 : -1)
+        let direction = level > resting ? 1 : -1
         restore()
+        guard detectHolds else { onPress?(direction); return }
+        // A held button keeps changing the volume. A second change the same way, soon after the first,
+        // is a hold; a single change that nothing follows is a press.
+        let now = Date()
+        let soon = now.timeIntervalSince(lastChange) < 1.0
+        lastChange = now
+        if holding == direction, soon { return }                        // still being held
+        if pending != nil, pendingDirection == direction, soon {
+            pending?.cancel(); pending = nil
+            holding = direction
+            onHold?(direction)
+            return
+        }
+        pending?.cancel()
+        holding = 0; pendingDirection = direction
+        pending = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 750_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.pending = nil
+            self.onPress?(direction)
+        }
     }
 
     /// Put the volume back, so presses keep registering and the user's volume doesn't creep. Uses the

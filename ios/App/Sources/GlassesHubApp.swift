@@ -25,7 +25,7 @@ final class PushDelegate: NSObject, UIApplicationDelegate {
 @main
 struct GlassesHubApp: App {
     @UIApplicationDelegateAdaptor(PushDelegate.self) private var pushDelegate
-    @StateObject private var model = HubModel()
+    @StateObject private var model = HubModel.shared
     @Environment(\.scenePhase) private var phase
 
     var body: some Scene {

@@ -36,11 +36,7 @@ struct SettingsView: View {
                             value: $model.pageSeconds, in: 0...60, step: 2)
                     Toggle("Navigate with the crown", isOn: $model.crownPaging)
                     Toggle("Turn the crown back to go back", isOn: $model.crownBack)
-                    Picker("A crown double click means", selection: $model.doubleClickAction) {
-                        Text("Apps menu").tag(2)
-                        Text("Select").tag(1)
-                        Text("Next").tag(0)
-                    }
+                    ActionPicker(title: "A crown double click means", selection: $model.doubleClickAction)
                     Picker("After a crown click", selection: $model.clickRearm) {
                         Text("Do nothing").tag(0)
                         Text("Reopen the page").tag(2)
@@ -54,13 +50,19 @@ struct SettingsView: View {
                         Text("Translation mode 3").tag(3)
                     }
                     Toggle("Navigate with the volume buttons", isOn: $model.volumePaging)
+                    if model.volumePaging {
+                        ActionPicker(title: "Volume up", selection: $model.volumeUpAction)
+                        ActionPicker(title: "Volume down", selection: $model.volumeDownAction)
+                        ActionPicker(title: "Hold volume up", selection: $model.volumeUpHold)
+                        ActionPicker(title: "Hold volume down", selection: $model.volumeDownHold)
+                        Text("Holds are experimental. With a hold set, a press takes about three quarters of a second to register, because the app has to wait and see whether you keep holding.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Text("The iPhone's Action button, Back Tap and Siri can drive the glasses too: add a Glasses Hub action (Next, Previous, Select, Apps menu, Start or stop the display) in the Shortcuts app, then assign that shortcut under Settings > Action Button or Accessibility > Touch > Back Tap.")
+                        .font(.footnote).foregroundStyle(.secondary)
                     Toggle("Look up to navigate", isOn: $model.headPaging)
                     if model.headPaging {
-                        Picker("A look up means", selection: $model.headAction) {
-                            Text("Apps menu").tag(2)
-                            Text("Select").tag(1)
-                            Text("Next").tag(0)
-                        }
+                        ActionPicker(title: "A look up means", selection: $model.headAction)
                     }
                     Toggle("Let the crown scroll long text instead (experimental)", isOn: $model.crownScroll)
                 } header: { Text("Long text") } footer: {
@@ -128,6 +130,21 @@ struct LogView: View {
                 Button("Copy") { UIPasteboard.general.string = link.log.joined(separator: "\n") }
                 Button("Clear") { link.clearLog() }
             }
+        }
+    }
+}
+
+/// Chooses what a button or gesture does.
+struct ActionPicker: View {
+    let title: String
+    @Binding var selection: Int
+    var body: some View {
+        Picker(title, selection: $selection) {
+            Text("Next").tag(0)
+            Text("Previous").tag(3)
+            Text("Select").tag(1)
+            Text("Apps menu").tag(2)
+            Text("Nothing").tag(4)
         }
     }
 }

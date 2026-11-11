@@ -84,6 +84,9 @@ enum AgendaView: String, CaseIterable, Identifiable {
 /// glasses should say right now.
 @MainActor
 final class HubModel: ObservableObject {
+    /// The one model, shared with the Shortcuts actions (which can run without the app's window).
+    static let shared = HubModel()
+
     let link = GlassesLink()
     let pc = PCLink()
     private let keepAwake = KeepAwake()
@@ -156,6 +159,12 @@ final class HubModel: ObservableObject {
     @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "lookUp") } }
     /// What a look up does when head navigation is on: false = next, true = select.
     @Published var headAction: Int { didSet { defaults.set(headAction, forKey: "headAction") } }   // 0 next, 1 select, 2 apps menu
+    // What each iPhone volume button does: a press and, optionally, a hold. Same values, plus 3 previous, 4 nothing.
+    @Published var volumeUpAction: Int { didSet { defaults.set(volumeUpAction, forKey: "volumeUpAction") } }
+    @Published var volumeDownAction: Int { didSet { defaults.set(volumeDownAction, forKey: "volumeDownAction") } }
+    @Published var volumeUpHold: Int { didSet { defaults.set(volumeUpHold, forKey: "volumeUpHold"); applyHolds() } }
+    @Published var volumeDownHold: Int { didSet { defaults.set(volumeDownHold, forKey: "volumeDownHold"); applyHolds() } }
+    private func applyHolds() { buttons.detectHolds = volumeUpHold != 4 || volumeDownHold != 4 }
     @Published var doubleClickAction: Int { didSet { defaults.set(doubleClickAction, forKey: "doubleClickAction") } }   // same values
     @Published var crownPaging: Bool { didSet { defaults.set(crownPaging, forKey: "crownPaging") } }
     /// Turning the crown back selects, like a click. The glasses report a crown click only now and
@@ -310,6 +319,10 @@ final class HubModel: ObservableObject {
         crownBack = bool("crownTwoWay", true)
         headPaging = bool("lookUp", true)
         headAction = defaults.object(forKey: "headAction") as? Int ?? 1
+        volumeUpAction = defaults.object(forKey: "volumeUpAction") as? Int ?? 0
+        volumeDownAction = defaults.object(forKey: "volumeDownAction") as? Int ?? 1
+        volumeUpHold = defaults.object(forKey: "volumeUpHold") as? Int ?? 4
+        volumeDownHold = defaults.object(forKey: "volumeDownHold") as? Int ?? 4
         doubleClickAction = defaults.object(forKey: "doubleClickAction") as? Int ?? 2
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
         metroBPM = d.object(forKey: "metroBPM") as? Int ?? 100
@@ -387,8 +400,14 @@ final class HubModel: ObservableObject {
         }
         buttons.onPress = { [weak self] direction in
             guard let self, self.link.isShowing else { return }
-            self.input(direction > 0 ? .next : .select)
+            self.gesture(direction > 0 ? self.volumeUpAction : self.volumeDownAction)
         }
+        buttons.onHold = { [weak self] direction in
+            guard let self, self.link.isShowing else { return }
+            self.link.record("Volume button held.")
+            self.gesture(direction > 0 ? self.volumeUpHold : self.volumeDownHold)
+        }
+        applyHolds()
         popFactDue = Date().addingTimeInterval(max(1, popFactMinutes) * 60)
         applyKeepAwake()
         link.onEnded = { [weak self] reason in self?.displayEnded(reason) }
@@ -795,11 +814,21 @@ final class HubModel: ObservableObject {
         switch action {
         case 0: input(.next)
         case 1: input(.select)
+        case 3: input(.previous)
+        case 4: break
         default:
             link.record("Apps menu " + (menuOpen ? "closed." : "opened."))
             if menuOpen { closeMenu() } else { openMenu() }
         }
     }
+
+    /// A step sent from outside the app: a Shortcut, the Action button, Back Tap, Siri.
+    func remote(_ action: Int) {
+        guard link.isShowing else { return }
+        link.record("Shortcut action.")
+        gesture(action)
+    }
+    func toggleDisplay() { if link.isRunning { stopDisplay() } else { startDisplay() } }
 
     private func openMenu() {
         // Always the top level, with the arrow on where the current app lives.
