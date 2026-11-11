@@ -102,6 +102,8 @@ final class HubModel: ObservableObject {
     @Published var gmailClientID: String { didSet { defaults.set(gmailClientID, forKey: "gmailClientID") } }
     @Published var mailQuery: String { didSet { defaults.set(mailQuery, forKey: "mailQuery"); mailDue = .distantPast } }
     @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "headPaging") } }
+    /// What a look up does when head navigation is on: false = next, true = select.
+    @Published var headSelects: Bool { didSet { defaults.set(headSelects, forKey: "headSelects") } }
     @Published var crownPaging: Bool { didSet { defaults.set(crownPaging, forKey: "crownPaging") } }
     /// Turning the crown back selects, like a click. The glasses report a crown click only now and
     /// then (one came through, then none for minutes), while every turn is reported, so the back turn
@@ -245,6 +247,7 @@ final class HubModel: ObservableObject {
         crownPaging = bool("crownPaging", true)
         crownBack = false       // off while testing whether the scroll-room line is what stops crown clicks
         headPaging = bool("headPaging", false)
+        headSelects = bool("headSelects", true)
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
         scoresView = ScoresView(rawValue: d.string(forKey: "scoresView") ?? "") ?? .auto
@@ -295,7 +298,8 @@ final class HubModel: ObservableObject {
         }
         link.onHeadRaise = { [weak self] in
             guard let self, self.headPaging, self.link.isShowing else { return }
-            self.input(.next)
+            self.link.record("Look up.")
+            self.input(self.headSelects ? .select : .next)
         }
         buttons.onPress = { [weak self] direction in
             guard let self, self.link.isShowing else { return }

@@ -251,6 +251,9 @@ public struct GlassesReport: Equatable {
             let depth = Envelope.int(extras["history_depth"]) ?? 0
             action = extras["action_result"] as? String == "success" && depth > 0 ? .crownBack(depth: depth) : .crownTurn
         }
+        // A look up while the caption page is showing, reported every time (as "fail" with plain
+        // captions, "success" with translation captions).
+        else if extras["action_type"] as? String == "raise_head" { action = .headRaise }
         else if extras["event_name"] as? String == "KEY_PRESS" { action = .crownClick }
         else if extras["exit_type"] as? String == "crown_long_press" { action = .holdExit }
         else if extras["trigger_source"] as? String == "raise_head", extras["screen_state"] as? String == "screen_on" { action = .headRaise }
