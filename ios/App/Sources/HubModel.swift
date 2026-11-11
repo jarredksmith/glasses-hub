@@ -191,6 +191,8 @@ final class HubModel: ObservableObject {
     private var watched = [String: Game]()
     private var pager = AutoPager()
     private var popupOpen = false
+    private var sectionIndex = 0
+    private var sectionKey = ""
     private var agendaStep = 0
     private var weatherStep: Int?
     private var mailDue = Date.distantPast
@@ -397,13 +399,30 @@ final class HubModel: ObservableObject {
             // everything else starts over.
             let readingText = !menuOpen && !listEnd && (program == .reader || (program == .news && reading != nil) || (program == .mail && mailOpen)
                                                         || (program == .agenda && agendaStep >= 2))
-            // crown mode only works for text short enough to send in one piece
-            if !(crownScroll && readingText && card.lines.joined(separator: "\n").utf8.count <= 3500) {
+            if crownScroll && readingText {
+                // Crown mode: send the text in one block for the glasses to scroll. A block can only be so
+                // big, so long text goes up in sections, stepped with "next" like pages.
+                var sections = [[String]](), current = [String](), bytes = 0
+                for line in card.lines {
+                    let cost = line.utf8.count + 1
+                    if bytes + cost > 2200, !current.isEmpty { sections.append(current); current = []; bytes = 0 }
+                    current.append(line); bytes += cost
+                }
+                if !current.isEmpty { sections.append(current) }
+                let key = "\(card.lines.count)|\(card.lines.first ?? "")"
+                if key != sectionKey { sectionKey = key; sectionIndex = 0 }
+                sectionIndex = max(0, min(sections.count - 1, sectionIndex))
+                var shown = sections.isEmpty ? card.lines : sections[sectionIndex]
+                if sections.count > 1 { shown.append("(section \(sectionIndex + 1) of \(sections.count))") }
+                card = Card(shown, scrolls: shown.count > screen.rows)
+                if pageIndex != sectionIndex { pageIndex = sectionIndex }
+                if pageCount != max(1, sections.count) { pageCount = max(1, sections.count) }
+            } else {
                 pager.paused = pagesPaused
                 card = pager.page(of: card, rows: screen.rows, now: now.timeIntervalSinceReferenceDate, seconds: pageSeconds, loops: !readingText)
                 if pageIndex != pager.index { pageIndex = pager.index }
                 if pageCount != pager.count { pageCount = pager.count }
-            } else if pageCount != 1 { pageCount = 1 }
+            }
         }
         let text = card.text(rows: screen.rows)
         if text != preview { preview = text }
@@ -495,8 +514,8 @@ final class HubModel: ObservableObject {
     }
     func closeMenu() { menuOpen = false; listEnd = false }
 
-    func pageStep(_ by: Int) { pager.step(by, now: Date().timeIntervalSinceReferenceDate) }
-    func pageRestart() { pager.restart(now: Date().timeIntervalSinceReferenceDate); pagesPaused = false }
+    func pageStep(_ by: Int) { sectionIndex += by; pager.step(by, now: Date().timeIntervalSinceReferenceDate) }
+    func pageRestart() { sectionIndex = 0; pager.restart(now: Date().timeIntervalSinceReferenceDate); pagesPaused = false }
     func togglePagesPaused() { pagesPaused.toggle() }
 
     private var glyphs: Glyphs { Glyphs(glyphStyle) }
