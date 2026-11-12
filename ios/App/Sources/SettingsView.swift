@@ -16,7 +16,7 @@ struct SettingsView: View {
                     Picker("Text size", selection: $model.textSize) {
                         ForEach(TextSize.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
-                    Stepper("\(columns.wrappedValue) characters per line", value: columns, in: 20...70)
+                    Stepper("\(columns.wrappedValue) characters per line", value: columns, in: 20...120)
                     Button("Show a test card for 30 seconds") { model.showTestCard() }
                 } header: { Text("Screen") } footer: {
                     Text("Text size applies the next time the display starts. If lines wrap early on the glasses, lower the characters per line; if there's room to spare, raise it. The test card has a ruler to check against.")

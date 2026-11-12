@@ -7,7 +7,12 @@ final class LayoutTests: XCTestCase {
         let lines = TextLayout.wrap("The quick brown fox jumps over the lazy dog near the riverbank today", width: 20)
         XCTAssertTrue(lines.allSatisfy { $0.count <= 20 })
         XCTAssertEqual(lines.joined(separator: " "), "The quick brown fox jumps over the lazy dog near the riverbank today")
-        XCTAssertEqual(TextLayout.wrap("Supercalifragilisticexpialidocious", width: 10).first, "Supercalif")
+        XCTAssertEqual(TextLayout.wrap("Supercalifragilisticexpialidocious", width: 10).first, "Supercali")
+        // Width is estimated from the letters, not counted: a line of wide letters breaks sooner.
+        XCTAssertEqual(TextLayout.wrap("Democrat Scott Colom wins the closest Senate race in the country", width: 38).first, "Democrat Scott Colom wins the")
+        XCTAssertEqual(TextLayout.wrap("Mississippi hadn't elected a Democrat to the U.S. Senate", width: 38).first, "Mississippi hadn't elected a")
+        XCTAssertGreaterThan(TextLayout.measure("WWWW"), TextLayout.measure("iiii") * 3)
+        XCTAssertTrue(TextLayout.wrap("it is a little bit of filler till the list is full, isn't it", width: 30).allSatisfy { TextLayout.measure($0) <= 30 })
         XCTAssertEqual(TextLayout.wrap("one\n\ntwo", width: 10), ["one", "", "two"])
     }
     func testFitAndLimitedWrap() {

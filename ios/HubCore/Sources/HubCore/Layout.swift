@@ -70,22 +70,61 @@ public enum TextLayout {
         out.append(ch)
     }
 
-    /// Break text into lines of at most `width` characters, at spaces where possible. Keeps paragraph breaks.
+    /// How wide a character is on the glasses, in units of an average character of ordinary English text.
+    /// The glasses draw Latin text in a proportional font ("m" and capitals are wide, "i" and "l" narrow),
+    /// so a line's width is the sum of these, not its character count. Double-width characters
+    /// (symbols, CJK, the full-width space) take about two units.
+    public static func unitWidth(_ ch: Character) -> Double {
+        switch ch {
+        case " ": return 0.6
+        case "i", "l", "j", "'", "|", ".", ",", ":", ";", "!": return 0.52
+        case "f", "t", "r", "I": return 0.67
+        case "-", "(", ")", "[", "]", "/", "\\", "\"": return 0.72
+        case "m", "M": return 1.8
+        case "w": return 1.57
+        case "W": return 2.04
+        case "G", "O", "Q": return 1.7
+        case "C", "D", "H", "N", "R", "U": return 1.57
+        case "A", "B", "E", "K", "P", "S", "V", "X", "Y": return 1.46
+        case "F", "L", "T", "Z": return 1.33
+        case "J": return 1.09
+        default:
+            guard let scalar = ch.unicodeScalars.first else { return 1.2 }
+            return scalar.value < 0x250 ? 1.2 : 2.17
+        }
+    }
+    /// The width of a line, in average characters.
+    public static func measure(_ text: String) -> Double { text.reduce(0) { $0 + unitWidth($1) } }
+    /// How much of a row to fill: a little short of the full width, since the estimate isn't exact and a
+    /// line that runs over is wrapped again by the glasses, which pushes the top of the screen out of view.
+    private static func limit(_ width: Int) -> Double { Double(max(4, width)) * 0.96 }
+
+    /// Break text into lines that fit a row `width` average characters wide, at spaces where possible.
+    /// Keeps paragraph breaks.
     public static func wrap(_ text: String, width: Int) -> [String] {
-        let width = max(4, width)
+        let room = limit(width)
         var lines = [String]()
         for paragraph in text.split(omittingEmptySubsequences: false, whereSeparator: { $0.isNewline }) {
-            var rest = Substring(clean(String(paragraph)))
-            if rest.isEmpty { if !(lines.last?.isEmpty ?? true) { lines.append("") }; continue }
-            while rest.count > width {
-                let window = rest.prefix(width + 1)
-                var cut = window.lastIndex(of: " ").map { window.distance(from: window.startIndex, to: $0) } ?? -1
-                if cut < width / 2 { cut = width }          // one very long word: hard cut
-                lines.append(String(rest.prefix(cut)).trimmingCharacters(in: .whitespaces))
-                rest = rest.dropFirst(cut)
-                while rest.first == " " { rest = rest.dropFirst() }
+            let cleaned = clean(String(paragraph))
+            if cleaned.isEmpty { if !(lines.last?.isEmpty ?? true) { lines.append("") }; continue }
+            var line = "", used = 0.0
+            for word in cleaned.split(separator: " ") {
+                let w = measure(String(word))
+                let gap = line.isEmpty ? 0 : unitWidth(" ")
+                if used + gap + w <= room {
+                    if !line.isEmpty { line += " " }
+                    line += word; used += gap + w
+                    continue
+                }
+                if !line.isEmpty { lines.append(line); line = ""; used = 0 }
+                if w <= room { line = String(word); used = w; continue }
+                for ch in word {                                   // one very long word: cut it where the row ends
+                    let c = unitWidth(ch)
+                    if used + c > room, !line.isEmpty { lines.append(line); line = ""; used = 0 }
+                    line.append(ch); used += c
+                }
             }
-            if !rest.isEmpty { lines.append(String(rest)) }
+            if !line.isEmpty { lines.append(line) }
         }
         while lines.last == "" { lines.removeLast() }
         return lines
@@ -105,7 +144,7 @@ public enum TextLayout {
         guard all.count > maxLines, maxLines > 0 else { return all }
         var kept = Array(all.prefix(maxLines))
         var last = kept[maxLines - 1]
-        while last.count + 2 > width, !last.isEmpty { last.removeLast() }
+        while measure(last + "..") > limit(width), !last.isEmpty { last.removeLast() }
         kept[maxLines - 1] = last.trimmingCharacters(in: .whitespaces) + ".."
         return kept
     }

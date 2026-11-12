@@ -293,7 +293,7 @@ final class NewsTests: XCTestCase {
                          link: URL(string: "https://example.com/a"), source: "Example", date: now.addingTimeInterval(-7200))
         let card = News.headlineCard(a, index: 2, count: 12, screen: Screen(size: .small), now: now, glyphs: Glyphs(.symbols))
         XCTAssertEqual(card.lines[0], "◆ Example 2h 3/12")
-        XCTAssertEqual(card.lines[1], "Rover finds and maps an ancient riverbed on")
+        XCTAssertEqual(card.lines[1], "Rover finds and maps an ancient riverbed")
         XCTAssertTrue(card.lines.contains("────────"))
         XCTAssertLessThanOrEqual(card.lines.count, 7)
         XCTAssertEqual(News.headlineCard(a, index: 0, count: 1, screen: Screen(size: .large), now: now).lines[0], "Example 2h")
