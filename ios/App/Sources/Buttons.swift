@@ -23,6 +23,8 @@ final class VolumeButtons: NSObject {
     private var resting: Float = 0.5
     private var last: Float = 0.5
     private var restoring: Task<Void, Never>?
+    /// Until this moment, a move back toward the resting level is this class's own doing.
+    private var settlingUntil = Date.distantPast
 
     var isOn: Bool { watch != nil }
 
@@ -49,7 +51,9 @@ final class VolumeButtons: NSObject {
         let previous = last
         last = level
         // Landing back on the resting level is this class putting the volume back, not a press.
-        guard abs(level - resting) > 0.001, abs(level - previous) > 0.001 else { return }
+        // (The system rounds levels to its own steps, so "back" means within a fraction of a step.)
+        guard abs(level - resting) > 0.02, abs(level - previous) > 0.02 else { return }
+        if Date() < settlingUntil, abs(level - resting) < abs(previous - resting) { return }
         // Each press is judged against the level before it, so presses still count if putting the
         // volume back is slow or iOS refuses it.
         let direction = level > previous ? 1 : -1
@@ -82,6 +86,7 @@ final class VolumeButtons: NSObject {
                 if abs(AVAudioSession.sharedInstance().outputVolume - self.resting) < 0.02 { return }
                 if self.volumeView == nil { self.attachSlider() }
                 if let slider = self.volumeView?.subviews.compactMap({ $0 as? UISlider }).first {
+                    self.settlingUntil = Date().addingTimeInterval(0.3)
                     slider.setValue(self.resting, animated: false)
                     slider.sendActions(for: .touchUpInside)
                 }
