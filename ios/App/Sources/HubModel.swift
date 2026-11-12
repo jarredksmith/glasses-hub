@@ -162,9 +162,9 @@ final class HubModel: ObservableObject {
     // What each iPhone volume button does: a press and, optionally, a hold. Same values, plus 3 previous, 4 nothing.
     @Published var volumeUpAction: Int { didSet { defaults.set(volumeUpAction, forKey: "volumeUpAction") } }
     @Published var volumeDownAction: Int { didSet { defaults.set(volumeDownAction, forKey: "volumeDownAction") } }
-    @Published var volumeUpHold: Int { didSet { defaults.set(volumeUpHold, forKey: "volumeUpHold"); applyHolds() } }
-    @Published var volumeDownHold: Int { didSet { defaults.set(volumeDownHold, forKey: "volumeDownHold"); applyHolds() } }
-    private func applyHolds() { buttons.detectHolds = volumeUpHold != 4 || volumeDownHold != 4 }
+    @Published var volumeUpDouble: Int { didSet { defaults.set(volumeUpDouble, forKey: "volumeUpDouble"); applyDoubles() } }
+    @Published var volumeDownDouble: Int { didSet { defaults.set(volumeDownDouble, forKey: "volumeDownDouble"); applyDoubles() } }
+    private func applyDoubles() { buttons.detectDoubles = volumeUpDouble != 4 || volumeDownDouble != 4 }
     @Published var doubleClickAction: Int { didSet { defaults.set(doubleClickAction, forKey: "doubleClickAction") } }   // same values
     @Published var crownPaging: Bool { didSet { defaults.set(crownPaging, forKey: "crownPaging") } }
     /// Turning the crown back selects, like a click. The glasses report a crown click only now and
@@ -321,8 +321,8 @@ final class HubModel: ObservableObject {
         headAction = defaults.object(forKey: "headAction") as? Int ?? 1
         volumeUpAction = defaults.object(forKey: "volumeUpAction") as? Int ?? 0
         volumeDownAction = defaults.object(forKey: "volumeDownAction") as? Int ?? 1
-        volumeUpHold = defaults.object(forKey: "volumeUpHold") as? Int ?? 4
-        volumeDownHold = defaults.object(forKey: "volumeDownHold") as? Int ?? 4
+        volumeUpDouble = defaults.object(forKey: "volumeUpDouble") as? Int ?? 4
+        volumeDownDouble = defaults.object(forKey: "volumeDownDouble") as? Int ?? 4
         doubleClickAction = defaults.object(forKey: "doubleClickAction") as? Int ?? 2
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
         metroBPM = d.object(forKey: "metroBPM") as? Int ?? 100
@@ -402,12 +402,12 @@ final class HubModel: ObservableObject {
             guard let self, self.link.isShowing else { return }
             self.gesture(direction > 0 ? self.volumeUpAction : self.volumeDownAction)
         }
-        buttons.onHold = { [weak self] direction in
+        buttons.onDouble = { [weak self] direction in
             guard let self, self.link.isShowing else { return }
-            self.link.record("Volume button held.")
-            self.gesture(direction > 0 ? self.volumeUpHold : self.volumeDownHold)
+            self.link.record("Volume button double press.")
+            self.gesture(direction > 0 ? self.volumeUpDouble : self.volumeDownDouble)
         }
-        applyHolds()
+        applyDoubles()
         popFactDue = Date().addingTimeInterval(max(1, popFactMinutes) * 60)
         applyKeepAwake()
         link.onEnded = { [weak self] reason in self?.displayEnded(reason) }

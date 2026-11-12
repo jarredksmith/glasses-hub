@@ -53,9 +53,9 @@ struct SettingsView: View {
                     if model.volumePaging {
                         ActionPicker(title: "Volume up", selection: $model.volumeUpAction)
                         ActionPicker(title: "Volume down", selection: $model.volumeDownAction)
-                        ActionPicker(title: "Hold volume up", selection: $model.volumeUpHold)
-                        ActionPicker(title: "Hold volume down", selection: $model.volumeDownHold)
-                        Text("Holds are experimental. With a hold set, a press takes about three quarters of a second to register, because the app has to wait and see whether you keep holding.")
+                        ActionPicker(title: "Double-press volume up", selection: $model.volumeUpDouble)
+                        ActionPicker(title: "Double-press volume down", selection: $model.volumeDownDouble)
+                        Text("With a double press set, a single press takes a moment longer (under half a second), because the app waits to see whether a second press follows.")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     Text("The iPhone's Action button, Back Tap and Siri can drive the glasses too: add a Glasses Hub action (Next, Previous, Select, Apps menu, Start or stop the display) in the Shortcuts app, then assign that shortcut under Settings > Action Button or Accessibility > Touch > Back Tap.")

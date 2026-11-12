@@ -11,57 +11,59 @@ import MediaPlayer
 @MainActor
 final class VolumeButtons: NSObject {
     var onPress: ((Int) -> Void)?
-    /// Called once when a button is held down. Only looked for when `detectHolds` is on, because
-    /// telling a hold from a press means waiting a moment before a press counts.
-    var onHold: ((Int) -> Void)?
-    var detectHolds = false
+    /// Called for two presses of the same button in quick succession. Only looked for when
+    /// `detectDoubles` is on, because a single press then has to wait a moment to see if a second follows.
+    var onDouble: ((Int) -> Void)?
+    var detectDoubles = false
     private var pending: Task<Void, Never>?
     private var pendingDirection = 0
-    private var holding = 0
-    private var lastChange = Date.distantPast
     private var watch: NSKeyValueObservation?
     private var volumeView: MPVolumeView?
+    /// Where the volume is put back to after each press, and the last level seen.
     private var resting: Float = 0.5
-    private var ignoreUntil = Date.distantPast
+    private var last: Float = 0.5
+    private var restoring: Task<Void, Never>?
 
     var isOn: Bool { watch != nil }
 
     func set(_ on: Bool) {
         if on, watch == nil {
             let session = AVAudioSession.sharedInstance()
-            resting = min(0.9, max(0.1, session.outputVolume))
+            resting = min(0.8, max(0.2, session.outputVolume))
+            last = session.outputVolume
             attachSlider()
             watch = session.observe(\.outputVolume, options: [.new]) { [weak self] _, change in
                 guard let level = change.newValue else { return }
                 Task { @MainActor in self?.changed(to: level) }
             }
+            if abs(last - resting) > 0.001 { restore() }            // start away from the ends of the range
         } else if !on, watch != nil {
             watch?.invalidate(); watch = nil
             volumeView?.removeFromSuperview(); volumeView = nil
+            pending?.cancel(); pending = nil
+            restoring?.cancel(); restoring = nil
         }
     }
 
     private func changed(to level: Float) {
-        guard Date() >= ignoreUntil, abs(level - resting) > 0.001 else { return }
-        let direction = level > resting ? 1 : -1
+        let previous = last
+        last = level
+        // Landing back on the resting level is this class putting the volume back, not a press.
+        guard abs(level - resting) > 0.001, abs(level - previous) > 0.001 else { return }
+        // Each press is judged against the level before it, so presses still count if putting the
+        // volume back is slow or iOS refuses it.
+        let direction = level > previous ? 1 : -1
         restore()
-        guard detectHolds else { onPress?(direction); return }
-        // A held button keeps changing the volume. A second change the same way, soon after the first,
-        // is a hold; a single change that nothing follows is a press.
-        let now = Date()
-        let soon = now.timeIntervalSince(lastChange) < 1.0
-        lastChange = now
-        if holding == direction, soon { return }                        // still being held
-        if pending != nil, pendingDirection == direction, soon {
+        guard detectDoubles else { onPress?(direction); return }
+        if pending != nil, pendingDirection == direction {
             pending?.cancel(); pending = nil
-            holding = direction
-            onHold?(direction)
+            onDouble?(direction)
             return
         }
-        pending?.cancel()
-        holding = 0; pendingDirection = direction
+        if pending != nil { pending?.cancel(); pending = nil; onPress?(pendingDirection) }     // the other button: don't lose it
+        pendingDirection = direction
         pending = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 750_000_000)
+            try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self else { return }
             self.pending = nil
             self.onPress?(direction)
@@ -69,21 +71,25 @@ final class VolumeButtons: NSObject {
     }
 
     /// Put the volume back, so presses keep registering and the user's volume doesn't creep. Uses the
-    /// system volume slider, the only handle iOS offers. If iOS won't allow it right now (it can refuse
-    /// in the background), follow the new level instead and stay clear of the ends of the range.
+    /// system volume slider, the only handle iOS offers, and tries a few times because iOS sometimes
+    /// ignores it. If it never takes, move the resting point off the ends so presses both ways still show.
     private func restore() {
-        ignoreUntil = Date().addingTimeInterval(0.35)
-        let target = resting
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            guard let self else { return }
-            if let slider = self.volumeView?.subviews.compactMap({ $0 as? UISlider }).first {
-                slider.setValue(target, animated: false)
-                slider.sendActions(for: .touchUpInside)
+        restoring?.cancel()
+        restoring = Task { @MainActor [weak self] in
+            for attempt in 0..<4 {
+                try? await Task.sleep(nanoseconds: attempt == 0 ? 60_000_000 : 200_000_000)
+                guard !Task.isCancelled, let self else { return }
+                if abs(AVAudioSession.sharedInstance().outputVolume - self.resting) < 0.02 { return }
+                if self.volumeView == nil { self.attachSlider() }
+                if let slider = self.volumeView?.subviews.compactMap({ $0 as? UISlider }).first {
+                    slider.setValue(self.resting, animated: false)
+                    slider.sendActions(for: .touchUpInside)
+                }
             }
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled, let self else { return }
             let level = AVAudioSession.sharedInstance().outputVolume
-            if abs(level - target) > 0.02 { self.resting = level }      // the reset didn't take: track where it is
+            if abs(level - self.resting) > 0.02, level > 0.1, level < 0.9 { self.resting = level }
         }
     }
 
