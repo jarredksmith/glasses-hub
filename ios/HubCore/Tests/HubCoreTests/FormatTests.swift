@@ -454,5 +454,21 @@ final class LiveTextTests: XCTestCase {
         XCTAssertTrue(reply.hasPrefix("HTTP/1.1 200 OK"))
         XCTAssertTrue(reply.hasSuffix(#"{"ok":true}"#))
     }
+
+    func testCloudCaption() {
+        var caption = CloudCaption()
+        let first = #"{"tokens":[{"text":"Hola","is_final":true,"translation_status":"original","language":"es"},{"text":"Hello","is_final":true,"translation_status":"translation","language":"en"},{"text":" every","is_final":false,"translation_status":"translation"}],"final_audio_proc_ms":100,"total_audio_proc_ms":300}"#
+        XCTAssertEqual(caption.take(Data(first.utf8)), .updated)
+        XCTAssertEqual(caption.text, "Hello every")
+        let second = #"{"tokens":[{"text":" everyone","is_final":true,"translation_status":"translation"},{"text":"<end>","is_final":true},{"text":" how","is_final":false,"translation_status":"translation"}]}"#
+        XCTAssertEqual(caption.take(Data(second.utf8)), .updated)
+        XCTAssertEqual(caption.text, "Hello everyone how")                                   // tentative words are replaced, not added
+        XCTAssertEqual(caption.take(Data(#"{"tokens":[],"finished":true}"#.utf8)), .finished)
+        XCTAssertEqual(caption.take(Data(#"{"tokens":[],"error_code":401,"error_message":"Invalid API key"}"#.utf8)), .failed("Invalid API key"))
+        var labelled = CloudCaption(labelSpeakers: true)
+        _ = labelled.take(Data(#"{"tokens":[{"text":"Hi","is_final":true,"speaker":"1","translation_status":"translation"},{"text":" there","is_final":true,"speaker":"1","translation_status":"translation"},{"text":" Yes","is_final":true,"speaker":"2","translation_status":"translation"}]}"#.utf8))
+        XCTAssertEqual(labelled.text, "S1: Hi there\nS2: Yes")
+        XCTAssertEqual(labelled.lines(screen: Screen(rows: 1, columns: 30, wideColumns: 15)), ["S2: Yes"])
+    }
 }
 

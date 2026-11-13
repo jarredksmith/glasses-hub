@@ -7,6 +7,8 @@ struct TranslateLanguage: Identifiable, Hashable {
     let name: String
     let speech: String
     let translation: String
+    /// The plain language code the cloud service uses.
+    var cloud: String { String(speech.prefix(2)) }
     var id: String { speech }
 
     static let all: [TranslateLanguage] = [

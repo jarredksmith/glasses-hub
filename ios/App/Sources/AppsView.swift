@@ -337,10 +337,24 @@ struct ProgramSettings: View {
         Section {
             Picker("They speak", selection: $model.translateFrom) { ForEach(TranslateLanguage.all) { Text($0.name).tag($0.speech) } }
             Picker("Show me", selection: $model.translateTo) { ForEach(TranslateLanguage.all) { Text($0.name).tag($0.speech) } }
-            Toggle("Show the original line too", isOn: $model.translateShowsOriginal)
+            Picker("Translate with", selection: $model.translateEngine) {
+                Text("This iPhone").tag("device")
+                Text("Soniox (faster)").tag("soniox")
+            }
+            if model.translateEngine == "soniox" {
+                SecureField("Soniox API key", text: $model.sonioxKey).textInputAutocapitalization(.never).autocorrectionDisabled()
+                Toggle("Label who's speaking", isOn: $model.translateSpeakers)
+            } else {
+                Toggle("Show the original line too", isOn: $model.translateShowsOriginal)
+            }
             Button(model.translateOn ? "Stop listening" : "Start listening") { model.toggleTranslate() }
             if !model.translateNote.isEmpty { Text(model.translateNote).foregroundStyle(.secondary) }
         } footer: {
+            if model.translateEngine == "soniox" {
+                Text("Soniox translates while the person is still speaking. It needs your own API key from console.soniox.com and an internet connection, and the audio is sent to Soniox's servers. Soniox bills your account by the hour of audio. The key is kept in this iPhone's Keychain.")
+            }
+        }
+        Section {} footer: {
             Text("Listens through the iPhone's microphone and translates on the phone, so keep the phone where it can hear. The first time you use a language pair, start it here with the app open: iOS may ask to download the languages. On the glasses: look up to start or stop. Needs iOS 18 or later.")
         }
     }

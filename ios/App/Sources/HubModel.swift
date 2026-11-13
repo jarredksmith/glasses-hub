@@ -135,6 +135,12 @@ final class HubModel: ObservableObject {
     @Published var translateFrom: String { didSet { defaults.set(translateFrom, forKey: "translateFrom"); if translateOn { restartTranslate() } } }
     @Published var translateTo: String { didSet { defaults.set(translateTo, forKey: "translateTo"); if translateOn { restartTranslate() } } }
     @Published var translateShowsOriginal: Bool { didSet { defaults.set(translateShowsOriginal, forKey: "translateShowsOriginal") } }
+    /// "device" translates on the iPhone; "soniox" streams to Soniox's service, which is faster.
+    @Published var translateEngine: String { didSet { defaults.set(translateEngine, forKey: "translateEngine"); if translateOn { restartTranslate() } } }
+    @Published var sonioxKey: String { didSet { Secrets.set("soniox", sonioxKey) } }
+    @Published var translateSpeakers: Bool { didSet { defaults.set(translateSpeakers, forKey: "translateSpeakers") } }
+    private let cloudTranslator = CloudTranslator()
+    private var cloud = CloudCaption()
     @Published private(set) var translateOn = false
     @Published var translateNote = ""
     /// The languages the translator should be set up for; nil while Live translate is off.
@@ -364,6 +370,9 @@ final class HubModel: ObservableObject {
         translateFrom = d.string(forKey: "translateFrom") ?? "es-ES"
         translateTo = d.string(forKey: "translateTo") ?? "en-US"
         translateShowsOriginal = d.bool(forKey: "translateShowsOriginal")
+        translateEngine = d.string(forKey: "translateEngine") ?? "device"
+        sonioxKey = Secrets.get("soniox")
+        translateSpeakers = d.bool(forKey: "translateSpeakers")
         apiOn = d.bool(forKey: "apiOn")
         apiPort = d.object(forKey: "apiPort") as? Int ?? Int(LocalAPI.defaultPort)
         liveSwitches = d.object(forKey: "liveSwitches") as? Bool ?? true
@@ -419,6 +428,11 @@ final class HubModel: ObservableObject {
         link.translationMode = translationMode
         link.rearm = clickRearm
         sound.onPitch = { [weak self] hz in self?.heard(hz) }
+        cloudTranslator.onMessage = { [weak self] data in self?.cloudMessage(data) }
+        cloudTranslator.onDropped = { [weak self] reason in
+            guard let self, self.translateOn else { return }
+            self.translateOn = false; self.translateNote = reason
+        }
         listener.onPartial = { [weak self] text in self?.heardPartial(text) }
         listener.onFinal = { [weak self] text in self?.heardFinal(text) }
         api.onState = { [weak self] state in Task { @MainActor in self?.apiState = state } }
@@ -755,8 +769,21 @@ final class HubModel: ObservableObject {
 
     func toggleTranslate() {
         if translateOn { stopTranslate(); return }
-        guard #available(iOS 18.0, *) else { translateNote = "Live translate needs iOS 18 or later."; return }
         guard translateFrom != translateTo else { translateNote = "Pick two different languages."; return }
+        if translateEngine == "soniox" {
+            translateNote = "Connecting…"
+            cloud = CloudCaption(labelSpeakers: translateSpeakers)
+            let from = TranslateLanguage.named(translateFrom).cloud, to = TranslateLanguage.named(translateTo).cloud
+            Task {
+                if let problem = await cloudTranslator.start(key: sonioxKey, from: from, to: to, speakers: translateSpeakers) {
+                    self.translateNote = problem; return
+                }
+                self.translateOn = true
+                self.translateNote = ""
+            }
+            return
+        }
+        guard #available(iOS 18.0, *) else { translateNote = "Translating on the iPhone needs iOS 18 or later."; return }
         translateNote = "Starting…"
         finishedPhrases.removeAll(); phraseNow = ""; heardNow = ""; finalJobs.removeAll(); partialJob = nil
         Task {
@@ -771,6 +798,7 @@ final class HubModel: ObservableObject {
     func stopTranslate() {
         guard translateOn else { return }
         listener.stop()
+        cloudTranslator.stop()
         translateOn = false
         translationRun += 1
         translationPair = nil
@@ -779,6 +807,20 @@ final class HubModel: ObservableObject {
     }
 
     private func restartTranslate() { stopTranslate(); toggleTranslate() }
+
+    private func cloudMessage(_ data: Data) {
+        guard translateOn, translateEngine == "soniox" else { return }
+        switch cloud.take(data) {
+        case .failed(let message):
+            cloudTranslator.stop(); translateOn = false
+            translateNote = "Soniox: " + message
+        case .finished:
+            cloudTranslator.stop(); translateOn = false
+        case .updated, .none:
+            break
+        }
+        if program == .translate, link.isRunning { tick() }
+    }
 
     private func heardPartial(_ text: String) {
         guard translateOn else { return }
@@ -820,6 +862,10 @@ final class HubModel: ObservableObject {
         let from = TranslateLanguage.named(translateFrom).name, to = TranslateLanguage.named(translateTo).name
         if !translateNote.isEmpty { return Card(["Live translate"] + TextLayout.wrap(translateNote, width: screen.columns)) }
         guard translateOn else { return Card(["Live translate", "\(from) > \(to)", "Look up to start listening"]) }
+        if translateEngine == "soniox" {
+            let lines = cloud.lines(screen: screen)
+            return lines.isEmpty ? Card(["Live translate", "\(from) > \(to)", "Listening…"]) : Card(lines)
+        }
         var text = finishedPhrases.joined(separator: "\n")
         if !phraseNow.isEmpty { text += (text.isEmpty ? "" : "\n") + phraseNow }
         let lines = TextLayout.wrap(text, width: screen.columns)

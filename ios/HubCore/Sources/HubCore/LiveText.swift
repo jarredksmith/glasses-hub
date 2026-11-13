@@ -102,3 +102,52 @@ public struct LocalRequest: Equatable, Sendable {
         return Data(head.utf8) + body
     }
 }
+
+/// A running caption built from a streaming speech service's messages (Soniox's real-time API):
+/// text that's settled, followed by the words still being worked out.
+public struct CloudCaption: Equatable {
+    public private(set) var settled = ""
+    public private(set) var pending = ""
+    private var lastSpeaker = ""
+    /// Put "S1:", "S2:" in front of each change of speaker (when the service labels speakers).
+    public var labelSpeakers = false
+    public static let limit = 3000
+
+    public enum Event: Equatable { case updated, finished, failed(String) }
+
+    public init(labelSpeakers: Bool = false) { self.labelSpeakers = labelSpeakers }
+
+    public var text: String { (settled + pending).trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// Takes one message from the service. Each carries newly settled words (sent once) and the
+    /// current tentative words (which replace the previous tentative ones).
+    public mutating func take(_ data: Data) -> Event? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if let message = object["error_message"] as? String { return .failed(message) }
+        var tentative = "", speaker = lastSpeaker
+        for case let token as [String: Any] in object["tokens"] as? [Any] ?? [] {
+            guard let piece = token["text"] as? String, !piece.isEmpty else { continue }
+            if piece.hasPrefix("<"), piece.hasSuffix(">") { continue }                 // markers such as <end>
+            // With translation on, the words to show are the translated ones (or ones that were already
+            // in the target language); the original-language words are skipped.
+            if (token["translation_status"] as? String) == "original" { continue }
+            let final = token["is_final"] as? Bool ?? false
+            var add = piece
+            if labelSpeakers, let who = token["speaker"].flatMap({ "\($0)" }), !who.isEmpty, who != (final ? lastSpeaker : speaker) {
+                add = "\nS\(who): " + piece.trimmingCharacters(in: .whitespaces)
+                if final { lastSpeaker = who }
+                speaker = who
+            }
+            if final { settled += add } else { tentative += add }
+        }
+        pending = tentative
+        if settled.count > CloudCaption.limit { settled = String(settled.suffix(CloudCaption.limit)) }
+        if object["finished"] as? Bool == true { return .finished }
+        return .updated
+    }
+
+    /// The newest lines that fit, like captions.
+    public func lines(screen: Screen) -> [String] {
+        Array(TextLayout.wrap(text, width: screen.columns).suffix(screen.rows))
+    }
+}
