@@ -12,7 +12,7 @@ import HubCore
 /// change settings on the glasses, or close anything it didn't open.
 @MainActor
 final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralManagerDelegate, @preconcurrency CBPeripheralDelegate {
-    enum State: String { case off, looking, connecting, opening, showing, closing }
+    enum State: String { case off, looking, connecting, opening, showing, closing, standby }
 
     @Published private(set) var state: State = .off
     @Published private(set) var status = "Display is off."
@@ -37,6 +37,14 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
     private var lastBack = Date.distantPast
     /// The wearer tilted their head up while this app's page was up.
     var onHeadRaise: (() -> Void)?
+    /// A phone notification the glasses turned away because our page was up; the app's bundle id.
+    var onBlockedNotification: ((String) -> Void)?
+    /// A look up while the page is closed to let notifications through.
+    var onStandbyRaise: (() -> Void)?
+    private var standingBy = false
+    private var lastBlocked = Date.distantPast
+    /// True while the page is closed but the connection is kept, so notifications reach the glasses.
+    var isStandingBy: Bool { state == .standby }
     private var lastRaise = Date.distantPast
     private var lastTurn = Date.distantPast
 
@@ -92,9 +100,27 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
         }
     }
 
+    /// Close the caption page but stay connected and listening, so the glasses show notifications.
+    func stepAside() {
+        guard state == .showing else { return }
+        standingBy = true
+        state = .closing; status = "Getting out of the way…"
+        note("Closing the page so notifications can show.")
+        perform(session.stop(now: now))
+    }
+    /// Bring the page back after stepping aside.
+    func comeBack() {
+        guard state == .standby else { return }
+        standingBy = false
+        guard let peripheral, peripheral.state == .connected, incoming != nil else { fail("The glasses disconnected."); return }
+        reopen()
+    }
+
     func stop() {
         guard state != .off else { return }
         userStopped = true; wantsStart = false
+        if state == .standby { standingBy = false; release("Display is off."); return }
+        standingBy = false
         if state == .looking || state == .connecting {
             finish("Display is off.")
             return
@@ -232,7 +258,10 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
             case .log(let line):
                 note(line)
             case .release(let reason):
-                release(reason)
+                if standingBy, !userStopped, peripheral?.state == .connected {
+                    state = .standby; status = "Out of the way so notifications can show. Look up to bring it back."
+                    note("Page closed; still listening.")
+                } else { release(reason) }
             }
         }
         if session.phase == .active, state == .opening {
@@ -290,6 +319,17 @@ final class GlassesLink: NSObject, ObservableObject, @preconcurrency CBCentralMa
             if logEvents, eventsLogged < 400 { eventsLogged += 1; note(describe(frame)) }
             if let report = GlassesReport(frame) {
                 if let level = report.battery, level != battery { battery = level }
+                if let package = report.blockedNotification, state == .showing {
+                    if Date().timeIntervalSince(lastBlocked) > 1.5 { note("The glasses blocked a notification from \(package)."); onBlockedNotification?(package) }
+                    lastBlocked = Date()
+                }
+                if let action = report.action, state == .standby {
+                    note("Report while out of the way: \(action).")
+                    if case .headRaise = action {
+                        if Date().timeIntervalSince(lastRaise) > 3.5 { onStandbyRaise?() }
+                        lastRaise = Date()
+                    }
+                }
                 if let action = report.action, state == .showing {
                     switch action {
                     case .crownTurn:

@@ -86,9 +86,12 @@ struct ProgramSettings: View {
             Toggle("Go blank when idle", isOn: $model.dashSleep)
             if model.dashSleep {
                 Stepper("Blank after \(model.dashSleepSeconds) seconds", value: $model.dashSleepSeconds, in: 5...300, step: 5)
+                Toggle("Let notifications through while blank (experimental)", isOn: $model.dashSleepCloses)
             }
         } footer: {
-            Text("The dashboard clears after this long. Look up, or turn the crown, to bring it back. Alerts still pop up while it's blank.")
+            Text(model.dashSleep && model.dashSleepCloses
+                 ? "While blank, Glasses Hub closes its page so the glasses can show your phone's notifications, and opens it again when you look up, press a volume button, or an alert comes in. The crown won't bring it back, and reopening takes a second or two. Whether a look up is noticed with the page closed depends on the glasses; if it isn't, use a volume button or the phone."
+                 : "The dashboard clears after this long. Look up, or turn the crown, to bring it back. Alerts still pop up while it's blank. The glasses don't show phone notifications while Glasses Hub's page is open, blank or not.")
         }
     }
 

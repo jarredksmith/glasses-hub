@@ -259,6 +259,11 @@ final class HubModel: ObservableObject {
     @Published var dashSleep: Bool { didSet { defaults.set(dashSleep, forKey: "dashSleep"); wakeDashboard() } }
     @Published var dashSleepSeconds: Int { didSet { defaults.set(dashSleepSeconds, forKey: "dashSleepSeconds"); wakeDashboard() } }
     private var dashAwakeUntil = Date.distantFuture
+    /// Experiment: while the dashboard is blank, close the page altogether so the glasses can show
+    /// phone notifications.
+    @Published var dashSleepCloses: Bool { didSet { defaults.set(dashSleepCloses, forKey: "dashSleepCloses"); wakeDashboard() } }
+    /// Say which app a notification came from when the glasses blocked it.
+    @Published var noticeBlocked: Bool { didSet { defaults.set(noticeBlocked, forKey: "noticeBlocked") } }
     private var dashAsleep: Bool { dashSleep && program == .dashboard && !menuOpen && Date() > dashAwakeUntil }
     private func wakeDashboard() { dashAwakeUntil = Date().addingTimeInterval(Double(max(5, dashSleepSeconds))) }
     @Published var dashWeather: Bool { didSet { defaults.set(dashWeather, forKey: "dashWeather") } }
@@ -418,6 +423,8 @@ final class HubModel: ObservableObject {
         dashScores = bool("dashScores", true)
         dashSleep = bool("dashSleep", false)
         dashSleepSeconds = d.object(forKey: "dashSleepSeconds") as? Int ?? 20
+        dashSleepCloses = bool("dashSleepCloses", false)
+        noticeBlocked = bool("noticeBlocked", true)
         dashWeather = bool("dashWeather", true)
         dashAgenda = bool("dashAgenda", true)
         dashNews = bool("dashNews", false)
@@ -469,11 +476,21 @@ final class HubModel: ObservableObject {
             self.link.record("Look up.")
             self.gesture(self.headAction)
         }
+        link.onBlockedNotification = { [weak self] package in
+            guard let self, self.noticeBlocked, package != Bundle.main.bundleIdentifier else { return }
+            self.overlays.push(Card(["Notification", TextLayout.headline(AppNames.name(bundle: package), screen: self.screen)]), seconds: min(self.alertSeconds, 6))
+        }
+        link.onStandbyRaise = { [weak self] in
+            self?.link.record("Look up: bringing the page back.")
+            self?.wakeDashboard()
+        }
         buttons.onPress = { [weak self] direction in
+            if self?.link.isStandingBy == true { self?.wakeDashboard(); return }
             guard let self, self.link.isShowing else { return }
             self.gesture(direction > 0 ? self.volumeUpAction : self.volumeDownAction)
         }
         buttons.onDouble = { [weak self] direction in
+            if self?.link.isStandingBy == true { self?.wakeDashboard(); return }
             guard let self, self.link.isShowing else { return }
             self.link.record("Volume button double press.")
             self.gesture(direction > 0 ? self.volumeUpDouble : self.volumeDownDouble)
@@ -600,6 +617,15 @@ final class HubModel: ObservableObject {
             alert(["TIME'S UP", timer.label], source: .timer)
         }
         if !timer.isDone(now: now) { timerAnnounced = false }
+
+        // Blank dashboard, set to get out of the way: close the page so notifications can show, and
+        // open it again as soon as anything wakes the dashboard or an alert comes in.
+        if link.isStandingBy {
+            if !overlays.isEmpty { wakeDashboard() }
+            if !dashAsleep || !dashSleepCloses { link.comeBack() }
+        } else if dashAsleep, dashSleepCloses, link.isShowing, overlays.isEmpty, !practicing, !popupOpen {
+            link.stepAside()
+        }
 
         var card: Card
         if popupOpen, !link.isShowing { card = currentCard(now: now) }        // still opening; the alert's clock hasn't started
@@ -1062,6 +1088,7 @@ final class HubModel: ObservableObject {
 
     /// A step sent from outside the app: a Shortcut, the Action button, Back Tap, Siri.
     func remote(_ action: Int) {
+        if link.isStandingBy { wakeDashboard(); return }
         guard link.isShowing else { return }
         link.record("Shortcut action.")
         gesture(action)
@@ -1396,7 +1423,7 @@ final class HubModel: ObservableObject {
     /// Something worth interrupting for. Goes to the display, a notification, or both, per the setting.
     /// An alert from the program already on screen isn't shown over itself.
     /// True when an alert can go to the display: it's on, or pop-up mode will open it.
-    private var reachable: Bool { link.isShowing || popUps }
+    private var reachable: Bool { link.isShowing || link.isStandingBy || popUps }
 
     private func alert(_ lines: [String], source: Program?) {
         let onDisplay = reachable && alertStyle != .notification

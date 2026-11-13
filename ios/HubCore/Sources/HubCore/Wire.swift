@@ -235,6 +235,9 @@ public struct GlassesReport: Equatable {
     }
     public var action: Action?
     public var battery: Int?
+    /// Set when the glasses turned a phone notification away because the caption page was up: the
+    /// app it came from (its bundle id). The glasses don't pass on what it said.
+    public var blockedNotification: String?
 
     public static let business: UInt8 = 15
 
@@ -263,6 +266,35 @@ public struct GlassesReport: Equatable {
         else if extras["trigger_source"] as? String == "raise_head", extras["screen_state"] as? String == "screen_on" { action = .headRaise }
         battery = Envelope.int(extras["battery_level"]) ?? Envelope.int(extras["bat"])
         if let level = battery, !(0...100).contains(level) { battery = nil }
-        if action == nil, battery == nil { return nil }
+        if extras["conflict_app_name"] != nil, extras["display_result"] as? String == "fail",
+           let package = extras["package_name"] as? String, !package.isEmpty { blockedNotification = package }
+        if action == nil, battery == nil, blockedNotification == nil { return nil }
+    }
+}
+
+/// Plain names for the apps a notification can come from.
+public enum AppNames {
+    private static let known: [String: String] = [
+        "com.apple.MobileSMS": "Messages", "com.apple.mobilemail": "Mail", "com.apple.Passbook": "Wallet",
+        "com.apple.mobilephone": "Phone", "com.apple.mobilecal": "Calendar", "com.apple.reminders": "Reminders",
+        "com.apple.facetime": "FaceTime", "com.apple.Home": "Home", "com.apple.findmy": "Find My",
+        "com.apple.news": "News", "com.apple.weather": "Weather", "com.apple.mobiletimer": "Clock",
+        "com.google.Gmail": "Gmail", "com.google.Maps": "Google Maps", "com.google.ios.youtube": "YouTube",
+        "com.google.calendar": "Google Calendar", "com.microsoft.Office.Outlook": "Outlook",
+        "com.microsoft.skype.teams": "Teams", "com.tinyspeck.chatlyio": "Slack",
+        "com.hammerandchisel.discord": "Discord", "net.whatsapp.WhatsApp": "WhatsApp",
+        "com.facebook.Messenger": "Messenger", "com.facebook.Facebook": "Facebook",
+        "com.burbn.instagram": "Instagram", "com.atebits.Tweetie2": "X", "ph.telegra.Telegraph": "Telegram",
+        "org.whispersystems.signal": "Signal", "com.toyopagroup.picaboo": "Snapchat",
+        "com.linkedin.LinkedIn": "LinkedIn", "com.zhiliaoapp.musically": "TikTok", "com.amazon.Amazon": "Amazon",
+        "com.ubercab.UberClient": "Uber", "com.spotify.client": "Spotify",
+    ]
+    /// The app's everyday name, or a best guess from the last part of its bundle id.
+    public static func name(bundle: String) -> String {
+        if let name = known[bundle] { return name }
+        if let match = known.first(where: { $0.key.lowercased() == bundle.lowercased() }) { return match.value }
+        let last = bundle.split(separator: ".").last.map(String.init) ?? bundle
+        guard let first = last.first else { return "an app" }
+        return first.uppercased() + last.dropFirst()
     }
 }

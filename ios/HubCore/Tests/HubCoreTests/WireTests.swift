@@ -272,6 +272,12 @@ final class GlassesReportTests: XCTestCase {
         XCTAssertEqual(GlassesReport(frame(double))?.battery, 46)
         XCTAssertEqual(GlassesReport(frame(stats))?.battery, 46)
         XCTAssertNil(GlassesReport(frame(other)))
+        let blocked = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"call_category":"NA","conflict_app_name":"ai_subtitle","display_result":"fail","notification_type":"finance","package_name":"com.apple.Passbook"}}}}"#
+        XCTAssertEqual(GlassesReport(frame(blocked))?.blockedNotification, "com.apple.Passbook")
+        XCTAssertNil(GlassesReport(frame(blocked))?.action)
+        XCTAssertNil(GlassesReport(frame(scroll))?.blockedNotification)
+        XCTAssertEqual(AppNames.name(bundle: "com.apple.Passbook"), "Wallet")
+        XCTAssertEqual(AppNames.name(bundle: "com.example.birdwatch"), "Birdwatch")
         let raise = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"raise_angle_deg":16,"screen_state":"screen_on","trigger_source":"raise_head"}}}}"#
         XCTAssertEqual(GlassesReport(frame(raise))?.action, .headRaise)
         let entry = #"{"cmd":"analytics_log","payload":{"data":{"extras":{"access_type":"enter","entry_source":"raise_head"}}}}"#

@@ -117,13 +117,14 @@ struct SettingsView: View {
                     ForEach(AlertStyle.allCases) { Text($0.title).tag($0) }
                 }
                 Stepper("Stay on screen \(Int(model.alertSeconds)) seconds", value: $model.alertSeconds, in: 4...30)
+                Toggle("Say when a phone notification was blocked", isOn: $model.noticeBlocked)
                 if model.notificationsAllowed {
                     Label("Notifications are allowed", systemImage: "checkmark.circle").foregroundStyle(.secondary)
                 } else {
                     Button("Allow notifications") { Task { await model.askNotifications() } }
                 }
             } header: { Text("Alerts") } footer: {
-                Text("Alerts are scores, a finished timer, and notes from your PC. Notifications reach the glasses through the RayNeo app: turn on Glasses Hub in its notification list.")
+                Text("Alerts are scores, a finished timer, and notes from your PC. Notifications reach the glasses through the RayNeo app: turn on Glasses Hub in its notification list.\n\nThe glasses don't show phone notifications while Glasses Hub's page is open. They do report which app one came from, so Glasses Hub can show \"Notification: Messages\" for a few seconds, without the message itself. To see notifications in full, use pop-up mode on the Display tab, or the dashboard's option to let notifications through while blank.")
             }
             Section {
                 Toggle("Keep running when the phone is locked", isOn: $model.runWhenLocked)
