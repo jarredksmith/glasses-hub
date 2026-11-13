@@ -27,7 +27,9 @@ struct TranslateLanguage: Identifiable, Hashable {
 /// Gives the model Apple's on-device translator. iOS only hands one out to a view, so this sits on the
 /// app's root view and keeps the translator working for as long as Live translate is on.
 struct TranslationHost: ViewModifier {
-    @EnvironmentObject private var model: HubModel
+    // The shared model directly, not from the environment: this modifier sits outside the point where
+    // the model is put into the environment, and asking the environment there crashes at launch.
+    @ObservedObject private var model = HubModel.shared
 
     func body(content: Content) -> some View {
         if #available(iOS 18.0, *) {
