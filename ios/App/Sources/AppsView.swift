@@ -62,6 +62,7 @@ struct ProgramSettings: View {
             case .reader: reader
             case .message: message
             case .live: liveText
+            case .translate: liveTranslate
             }
         }
         .navigationTitle(program.title)
@@ -329,6 +330,18 @@ struct ProgramSettings: View {
             if !model.readerText.isEmpty { Button("Clear", role: .destructive) { model.readerText = "" } }
         } header: { Text("Text to read") } footer: {
             Text("Long text is shown a screen at a time and turns by itself. Set the speed under Settings; pause or step pages from the Display tab.")
+        }
+    }
+
+    @ViewBuilder private var liveTranslate: some View {
+        Section {
+            Picker("They speak", selection: $model.translateFrom) { ForEach(TranslateLanguage.all) { Text($0.name).tag($0.speech) } }
+            Picker("Show me", selection: $model.translateTo) { ForEach(TranslateLanguage.all) { Text($0.name).tag($0.speech) } }
+            Toggle("Show the original line too", isOn: $model.translateShowsOriginal)
+            Button(model.translateOn ? "Stop listening" : "Start listening") { model.toggleTranslate() }
+            if !model.translateNote.isEmpty { Text(model.translateNote).foregroundStyle(.secondary) }
+        } footer: {
+            Text("Listens through the iPhone's microphone and translates on the phone, so keep the phone where it can hear. The first time you use a language pair, start it here with the app open: iOS may ask to download the languages. On the glasses: look up to start or stop. Needs iOS 18 or later.")
         }
     }
 

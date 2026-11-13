@@ -6,7 +6,7 @@ import HubCore
 /// What can be on the glasses.
 enum Program: String, CaseIterable, Identifiable {
     case dashboard, scores, news, mail, agenda, weather, trivia, facts, timer, reader, message
-    case speed, metronome, tuner, picker, live
+    case speed, metronome, tuner, picker, live, translate
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -16,6 +16,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .news: return "News"; case .mail: return "Mail"
         case .speed: return "Speed read"; case .metronome: return "Metronome"; case .tuner: return "Tuner"; case .picker: return "Dice & coin"
         case .live: return "Live text"
+        case .translate: return "Live translate"
         }
     }
     var icon: String {
@@ -26,6 +27,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .news: return "newspaper"; case .mail: return "envelope"
         case .speed: return "bolt.horizontal"; case .metronome: return "metronome"; case .tuner: return "tuningfork"; case .picker: return "dice"
         case .live: return "captions.bubble"
+        case .translate: return "translate"
         }
     }
     var blurb: String {
@@ -46,6 +48,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .tuner: return "Play a note near your phone and see how far off it is."
         case .picker: return "Flip a coin, roll dice, or pick from your own list."
         case .live: return "Text sent by another app or a shortcut, such as live translation."
+        case .translate: return "Listens through the phone and shows a running translation."
         }
     }
 }
@@ -125,6 +128,25 @@ final class HubModel: ObservableObject {
     /// Jump to Live text when text arrives while another app is showing.
     @Published var liveSwitches: Bool { didSet { defaults.set(liveSwitches, forKey: "liveSwitches") } }
 
+    // Live translate
+    struct TranslationJob { let id: Int; let text: String; let final: Bool }
+    private let listener = SpeechListener()
+    @Published var translateFrom: String { didSet { defaults.set(translateFrom, forKey: "translateFrom"); if translateOn { restartTranslate() } } }
+    @Published var translateTo: String { didSet { defaults.set(translateTo, forKey: "translateTo"); if translateOn { restartTranslate() } } }
+    @Published var translateShowsOriginal: Bool { didSet { defaults.set(translateShowsOriginal, forKey: "translateShowsOriginal") } }
+    @Published private(set) var translateOn = false
+    @Published var translateNote = ""
+    /// The languages the translator should be set up for; nil while Live translate is off.
+    @Published private(set) var translationPair: (from: String, to: String)?
+    private(set) var translationRun = 0
+    private var finishedPhrases: [String] = []           // translated, oldest first
+    private var phraseNow = ""                           // translation of the phrase being spoken
+    private var heardNow = ""                            // the phrase being spoken, as heard
+    private var finalJobs: [TranslationJob] = []
+    private var partialJob: TranslationJob?
+    private var jobCounter = 0
+    private var partialAskedAt = Date.distantPast
+
     // Tools
     private let sound = ToolSound()
     @Published var metroBPM: Int { didSet { defaults.set(metroBPM, forKey: "metroBPM"); if metroOn { sound.startMetronome(bpm: metroBPM, beats: metroBeats); restartBeat() } } }
@@ -155,7 +177,7 @@ final class HubModel: ObservableObject {
     struct MenuGroup: Identifiable { let title: String; let items: [Program]; var id: String { title } }
     var menuGroups: [MenuGroup] {
         [MenuGroup(title: "Info", items: [.scores, .news, .mail, .agenda, .weather].filter { $0 != .mail || showMail }),
-         MenuGroup(title: "Reading", items: [.reader, .speed, .message, .live]),
+         MenuGroup(title: "Reading", items: [.reader, .speed, .message, .live, .translate]),
          MenuGroup(title: "Tools", items: [.timer, .metronome, .tuner, .picker]),
          MenuGroup(title: "Fun", items: [.trivia, .facts])]
     }
@@ -338,6 +360,9 @@ final class HubModel: ObservableObject {
         volumeDownDouble = defaults.object(forKey: "volumeDownDouble") as? Int ?? 4
         doubleClickAction = defaults.object(forKey: "doubleClickAction") as? Int ?? 2
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
+        translateFrom = d.string(forKey: "translateFrom") ?? "es-ES"
+        translateTo = d.string(forKey: "translateTo") ?? "en-US"
+        translateShowsOriginal = d.bool(forKey: "translateShowsOriginal")
         apiOn = d.bool(forKey: "apiOn")
         apiPort = d.object(forKey: "apiPort") as? Int ?? Int(LocalAPI.defaultPort)
         liveSwitches = d.object(forKey: "liveSwitches") as? Bool ?? true
@@ -393,6 +418,8 @@ final class HubModel: ObservableObject {
         link.translationMode = translationMode
         link.rearm = clickRearm
         sound.onPitch = { [weak self] hz in self?.heard(hz) }
+        listener.onPartial = { [weak self] text in self?.heardPartial(text) }
+        listener.onFinal = { [weak self] text in self?.heardFinal(text) }
         api.onState = { [weak self] state in Task { @MainActor in self?.apiState = state } }
         api.handler = { [weak self] request in await self?.answer(request) ?? (404, ["ok": false]) }
         applyAPI()
@@ -523,7 +550,8 @@ final class HubModel: ObservableObject {
         }
 
         // Speed read moves on by the clock, and is the one app that sends screens faster than once a second.
-        if program == .live, !menuOpen { link.pace = 0.35 }            // captions should keep up with speech
+        listener.tick()
+        if (program == .live || program == .translate), !menuOpen { link.pace = 0.35 }       // captions should keep up with speech
         else if program == .metronome, metroOn, metroVisual, !menuOpen { link.pace = max(0.25, 60.0 / Double(max(1, metroBPM)) * 0.6) }
         else { link.pace = program == .speed && speedPlaying && !menuOpen ? SpeedRead.interval(wpm: speedWPM, chunk: speedChunk) : 1.0 }
         if program == .speed, speedPlaying, !menuOpen {
@@ -668,6 +696,8 @@ final class HubModel: ObservableObject {
             break                                   // handled in toolInput
         case .live:
             if !next { openMenu() }
+        case .translate:
+            if !next { toggleTranslate() }
         }
     }
 
@@ -717,6 +747,82 @@ final class HubModel: ObservableObject {
             return false
         }
         return true
+    }
+
+    // MARK: Live translate
+
+    func toggleTranslate() {
+        if translateOn { stopTranslate(); return }
+        guard #available(iOS 18.0, *) else { translateNote = "Live translate needs iOS 18 or later."; return }
+        guard translateFrom != translateTo else { translateNote = "Pick two different languages."; return }
+        translateNote = "Starting…"
+        finishedPhrases.removeAll(); phraseNow = ""; heardNow = ""; finalJobs.removeAll(); partialJob = nil
+        Task {
+            if let problem = await listener.start(locale: translateFrom) { self.translateNote = problem; return }
+            self.translationRun += 1
+            self.translateOn = true
+            self.translateNote = ""
+            self.translationPair = (TranslateLanguage.named(self.translateFrom).translation, TranslateLanguage.named(self.translateTo).translation)
+        }
+    }
+
+    func stopTranslate() {
+        guard translateOn else { return }
+        listener.stop()
+        translateOn = false
+        translationRun += 1
+        translationPair = nil
+        finalJobs.removeAll(); partialJob = nil
+        keepAwake.resume()
+    }
+
+    private func restartTranslate() { stopTranslate(); toggleTranslate() }
+
+    private func heardPartial(_ text: String) {
+        guard translateOn else { return }
+        heardNow = text
+        // translate the phrase as it grows, but not on every word
+        if Date().timeIntervalSince(partialAskedAt) > 0.6 {
+            partialAskedAt = Date(); jobCounter += 1
+            partialJob = TranslationJob(id: jobCounter, text: text, final: false)
+        }
+    }
+
+    private func heardFinal(_ text: String) {
+        guard translateOn else { return }
+        heardNow = ""; partialJob = nil
+        jobCounter += 1
+        finalJobs.append(TranslationJob(id: jobCounter, text: text, final: true))
+    }
+
+    /// The next thing to translate: finished phrases in order, then the newest look at the current one.
+    func nextTranslationJob() -> TranslationJob? {
+        if !finalJobs.isEmpty { return finalJobs.removeFirst() }
+        defer { partialJob = nil }
+        return partialJob
+    }
+
+    func finishTranslation(_ job: TranslationJob, _ translated: String) {
+        guard translateOn else { return }
+        let line = translateShowsOriginal && job.final ? job.text + "\n> " + translated : translated
+        if job.final {
+            finishedPhrases.append(line); phraseNow = ""
+            if finishedPhrases.count > 40 { finishedPhrases.removeFirst(finishedPhrases.count - 40) }
+        } else if finalJobs.isEmpty {
+            phraseNow = translated
+        }
+        if program == .translate, link.isRunning { tick() }
+    }
+
+    private func translateCard(screen: Screen) -> Card {
+        let from = TranslateLanguage.named(translateFrom).name, to = TranslateLanguage.named(translateTo).name
+        if !translateNote.isEmpty { return Card(["Live translate"] + TextLayout.wrap(translateNote, width: screen.columns)) }
+        guard translateOn else { return Card(["Live translate", "\(from) > \(to)", "Look up to start listening"]) }
+        var text = finishedPhrases.joined(separator: "\n")
+        if !phraseNow.isEmpty { text += (text.isEmpty ? "" : "\n") + phraseNow }
+        let lines = TextLayout.wrap(text, width: screen.columns)
+        guard !lines.isEmpty else { return Card(["Live translate", "\(from) > \(to)", "Listening…"]) }
+        return Card(Array(lines.suffix(screen.rows)))
     }
 
     // MARK: Live text
@@ -832,6 +938,7 @@ final class HubModel: ObservableObject {
     private func stopTools() {
         if metroOn { sound.stopMetronome(); metroOn = false; restartBeat() }
         if tunerOn { sound.stopListening(); tunerOn = false; tunerReading = nil }
+        if translateOn, program != .translate { stopTranslate() }
         speedPlaying = false
     }
 
@@ -858,7 +965,7 @@ final class HubModel: ObservableObject {
             weatherStep = max(0, (weatherStep ?? 0) + 2)             // three views: two forward is one back
         case .facts, .reader:
             if earlierPage { pageStep(-1) }
-        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .live:
+        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .live, .translate:
             break
         }
     }
@@ -1026,6 +1133,8 @@ final class HubModel: ObservableObject {
             return card.isEmpty ? Card(["Message", "Type one in the app."]) : card
         case .live:
             return live.card(screen: screen)
+        case .translate:
+            return translateCard(screen: screen)
         case .speed:
             return SpeedRead.card(words: speedText(), index: speedIndex, size: speedChunk, playing: speedPlaying, wpm: speedWPM, screen: screen)
         case .metronome:
