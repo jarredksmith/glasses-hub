@@ -121,6 +121,7 @@ final class HubModel: ObservableObject {
     // Live text from other apps
     @Published private(set) var live = LiveText()
     @Published private(set) var liveReceivedAt: Date?
+    private var livePage = 0
     private let api = LocalAPI()
     @Published private(set) var apiState = "Off."
     @Published var apiOn: Bool { didSet { defaults.set(apiOn, forKey: "apiOn"); applyAPI() } }
@@ -696,6 +697,7 @@ final class HubModel: ObservableObject {
             break                                   // handled in toolInput
         case .live:
             if !next { openMenu() }
+            else if livePage < live.pageCount(screen: screen) - 1 { livePage += 1 } else { livePage = 0 }
         case .translate:
             if !next { toggleTranslate() }
         }
@@ -836,6 +838,7 @@ final class HubModel: ObservableObject {
     func showLive(_ text: String, append: Bool, start: Bool = false) {
         live.show(text, append: append)
         liveReceivedAt = Date()
+        livePage = 0
         if start, !link.isRunning { startDisplay() }
         if liveSwitches, program != .live { program = .live }
         if program == .live, link.isRunning { tick() }                 // don't wait for the next quarter second
@@ -966,7 +969,9 @@ final class HubModel: ObservableObject {
             weatherStep = max(0, (weatherStep ?? 0) + 2)             // three views: two forward is one back
         case .facts, .reader:
             if earlierPage { pageStep(-1) }
-        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .live, .translate:
+        case .live:
+            if livePage > 0 { livePage -= 1 }
+        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .translate:
             break
         }
     }
@@ -1133,7 +1138,7 @@ final class HubModel: ObservableObject {
             let card = Reader.note(title: "", body: messageText, screen: screen)
             return card.isEmpty ? Card(["Message", "Type one in the app."]) : card
         case .live:
-            return live.card(screen: screen)
+            return live.card(screen: screen, page: livePage)
         case .translate:
             return translateCard(screen: screen)
         case .speed:

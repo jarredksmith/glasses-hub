@@ -427,8 +427,13 @@ final class LiveTextTests: XCTestCase {
         live.show("A: xin chào", append: false)
         live.show("B: 你好", append: true)
         XCTAssertEqual(live.card(screen: screen).lines, ["A: xin chào", "B: 你好"])
-        live.show("one\ntwo\nthree\nfour", append: false)
-        XCTAssertEqual(live.card(screen: screen).lines, ["two", "three", "four"])                  // newest at the bottom
+        live.show("zero", append: false)
+        for word in ["one", "two", "three", "four"] { live.show(word, append: true) }
+        XCTAssertEqual(live.card(screen: screen).lines, ["two", "three", "four"])                  // a stream: newest at the bottom
+        live.show("Ask: who owns it\nline two\nline three\nline four", append: false)
+        XCTAssertEqual(live.card(screen: screen).lines, ["Ask: who owns it", "line two", "(1/2)"])   // a note: starts at the top
+        XCTAssertEqual(live.card(screen: screen, page: 1).lines, ["line three", "line four", "(2/2)"])
+        XCTAssertEqual(live.pageCount(screen: screen), 2)
         live.clear()
         XCTAssertEqual(live.text, "")
         XCTAssertLessThan(TextLayout.measure("Tiếng Việt"), TextLayout.measure("你好你好你好"))

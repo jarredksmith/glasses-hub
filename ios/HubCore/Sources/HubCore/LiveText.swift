@@ -3,6 +3,8 @@ import Foundation
 /// Text handed to Glasses Hub by another app (a translator, a script, a shortcut) to show on the glasses.
 public struct LiveText: Equatable {
     public private(set) var text = ""
+    /// Whether the text is a running stream (lines added one after another) or one piece put up whole.
+    public private(set) var streaming = false
     /// How much text is kept when appending; older text falls off the front.
     public static let limit = 4000
 
@@ -12,15 +14,24 @@ public struct LiveText: Equatable {
     public mutating func show(_ incoming: String, append: Bool) {
         let cleaned = incoming.replacingOccurrences(of: "\r\n", with: "\n")
         if append, !text.isEmpty { text += "\n" + cleaned } else { text = cleaned }
+        streaming = append
         if text.count > LiveText.limit { text = String(text.suffix(LiveText.limit)) }
     }
-    public mutating func clear() { text = "" }
+    public mutating func clear() { text = ""; streaming = false }
 
-    /// The newest lines that fit the screen, like captions: the latest text is at the bottom.
-    public func card(screen: Screen) -> Card {
+    /// How many screens a whole piece of text takes (always 1 for a stream).
+    public func pageCount(screen: Screen) -> Int {
+        streaming ? 1 : max(1, TextLayout.pages(TextLayout.wrap(text, width: screen.columns), rows: screen.rows).count)
+    }
+
+    /// A stream shows its newest lines, like captions, with the latest at the bottom. A whole piece of
+    /// text (a note) shows from its first line, and pages if it's longer than the screen.
+    public func card(screen: Screen, page: Int = 0) -> Card {
         let lines = TextLayout.wrap(text, width: screen.columns)
         guard !lines.isEmpty else { return Card(["Live text", "Waiting for text from", "another app."]) }
-        return Card(Array(lines.suffix(screen.rows)))
+        if streaming { return Card(Array(lines.suffix(screen.rows))) }
+        let pages = TextLayout.pages(lines, rows: screen.rows)
+        return Card(pages[max(0, min(pages.count - 1, page))])
     }
 }
 
