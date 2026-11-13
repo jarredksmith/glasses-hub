@@ -15,6 +15,18 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<!-- glasseshub://show?text=... lets another app or a shortcut put text on the glasses. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.jarredsmith.glasseshub</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>glasseshub</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

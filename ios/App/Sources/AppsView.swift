@@ -61,6 +61,7 @@ struct ProgramSettings: View {
             case .agenda: agenda
             case .reader: reader
             case .message: message
+            case .live: liveText
             }
         }
         .navigationTitle(program.title)
@@ -329,6 +330,31 @@ struct ProgramSettings: View {
         } header: { Text("Text to read") } footer: {
             Text("Long text is shown a screen at a time and turns by itself. Set the speed under Settings; pause or step pages from the Display tab.")
         }
+    }
+
+    @ViewBuilder private var liveText: some View {
+        Section {
+            Text(model.live.text.isEmpty ? "Nothing received yet." : model.live.text)
+                .font(.callout).foregroundStyle(model.live.text.isEmpty ? .secondary : .primary).lineLimit(6)
+            if !model.live.text.isEmpty { Button("Clear", role: .destructive) { model.clearLive() } }
+            Toggle("Switch to Live text when text arrives", isOn: $model.liveSwitches)
+        } header: { Text("Showing") } footer: {
+            Text("The newest lines are kept at the bottom of the glasses' screen, like captions.")
+        }
+        Section {
+            Toggle("Local API", isOn: $model.apiOn)
+            if model.apiOn {
+                Stepper("Port \(model.apiPort)", value: $model.apiPort, in: 1024...65535)
+                LabeledContent("Status", value: model.apiState)
+            }
+        } header: { Text("From another app on this iPhone") } footer: {
+            Text("With the Local API on, an app on this phone can send text while Glasses Hub runs in the background:\n\nPOST http://127.0.0.1:\(model.apiPort)/show\nwith JSON {\"text\": \"Hello\", \"append\": false}\n\nA plain-text body or ?text=Hello works too. /clear empties the screen and /status reports whether the display is on. Add ?start=1 to turn the display on if it's off. Only apps on this phone can reach it.")
+        }
+        Section {
+            Text("Shortcuts: add the \"Show text on glasses\" action from Glasses Hub.")
+            Text("Link: glasseshub://show?text=Hello  (add &append=1 to add a line, &start=1 to turn the display on). Opening a link brings Glasses Hub to the front, so the Local API or the Shortcuts action is better for a live stream.")
+        } header: { Text("Other ways in") }
+        .font(.footnote)
     }
 
     @ViewBuilder private var message: some View {

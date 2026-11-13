@@ -419,3 +419,35 @@ final class ToolsTests: XCTestCase {
     }
 }
 
+final class LiveTextTests: XCTestCase {
+    func testLiveText() {
+        var live = LiveText()
+        let screen = Screen(rows: 3, columns: 30, wideColumns: 15)
+        XCTAssertEqual(live.card(screen: screen).lines.first, "Live text")
+        live.show("A: xin chào", append: false)
+        live.show("B: 你好", append: true)
+        XCTAssertEqual(live.card(screen: screen).lines, ["A: xin chào", "B: 你好"])
+        live.show("one\ntwo\nthree\nfour", append: false)
+        XCTAssertEqual(live.card(screen: screen).lines, ["two", "three", "four"])                  // newest at the bottom
+        live.clear()
+        XCTAssertEqual(live.text, "")
+        XCTAssertLessThan(TextLayout.measure("Tiếng Việt"), TextLayout.measure("你好你好你好"))
+    }
+    func testLocalRequests() {
+        let get = LocalRequest.parse(Data("GET /show?text=Hello%20there&append=1 HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".utf8))
+        XCTAssertEqual(get?.path, "/show")
+        XCTAssertEqual(get?.textAndAppend.text, "Hello there")
+        XCTAssertEqual(get?.textAndAppend.append, true)
+        let json = #"{"text":"Xin chào","append":false}"#
+        let post = "POST /show HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: \(json.utf8.count)\r\n\r\n" + json
+        XCTAssertEqual(LocalRequest.parse(Data(post.utf8))?.textAndAppend.text, "Xin chào")
+        XCTAssertNil(LocalRequest.parse(Data(post.utf8).dropLast(4)))                             // body not all here yet
+        let plain = "POST /show HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 5\r\n\r\nhello"
+        XCTAssertEqual(LocalRequest.parse(Data(plain.utf8))?.textAndAppend.text, "hello")
+        XCTAssertEqual(LocalRequest.fields("a=1&b=two+words")["b"], "two words")
+        let reply = String(data: LocalRequest.response(json: ["ok": true]), encoding: .utf8) ?? ""
+        XCTAssertTrue(reply.hasPrefix("HTTP/1.1 200 OK"))
+        XCTAssertTrue(reply.hasSuffix(#"{"ok":true}"#))
+    }
+}
+

@@ -34,6 +34,7 @@ struct GlassesHubApp: App {
                 .environmentObject(model)
                 .environmentObject(model.link)
                 .environmentObject(model.pc)
+                .onOpenURL { model.open(url: $0) }
                 .onChange(of: phase) { _, new in
                     if new == .active { model.scene(active: true) }
                     else if new == .background { model.scene(active: false) }

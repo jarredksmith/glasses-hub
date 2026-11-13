@@ -6,7 +6,7 @@ import HubCore
 /// What can be on the glasses.
 enum Program: String, CaseIterable, Identifiable {
     case dashboard, scores, news, mail, agenda, weather, trivia, facts, timer, reader, message
-    case speed, metronome, tuner, picker
+    case speed, metronome, tuner, picker, live
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -15,6 +15,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .agenda: return "Calendar"; case .reader: return "Reader"; case .message: return "Message"
         case .news: return "News"; case .mail: return "Mail"
         case .speed: return "Speed read"; case .metronome: return "Metronome"; case .tuner: return "Tuner"; case .picker: return "Dice & coin"
+        case .live: return "Live text"
         }
     }
     var icon: String {
@@ -24,6 +25,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .agenda: return "calendar"; case .reader: return "text.alignleft"; case .message: return "text.bubble"
         case .news: return "newspaper"; case .mail: return "envelope"
         case .speed: return "bolt.horizontal"; case .metronome: return "metronome"; case .tuner: return "tuningfork"; case .picker: return "dice"
+        case .live: return "captions.bubble"
         }
     }
     var blurb: String {
@@ -43,6 +45,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .metronome: return "Clicks from your phone; set the tempo with the crown."
         case .tuner: return "Play a note near your phone and see how far off it is."
         case .picker: return "Flip a coin, roll dice, or pick from your own list."
+        case .live: return "Text sent by another app or a shortcut, such as live translation."
         }
     }
 }
@@ -112,6 +115,16 @@ final class HubModel: ObservableObject {
     @Published var gmailClientID: String { didSet { defaults.set(gmailClientID, forKey: "gmailClientID") } }
     /// Mail needs the owner's own Google sign-in set-up, so it stays hidden unless switched on.
     @Published var showMail: Bool { didSet { defaults.set(showMail, forKey: "showMail") } }
+    // Live text from other apps
+    @Published private(set) var live = LiveText()
+    @Published private(set) var liveReceivedAt: Date?
+    private let api = LocalAPI()
+    @Published private(set) var apiState = "Off."
+    @Published var apiOn: Bool { didSet { defaults.set(apiOn, forKey: "apiOn"); applyAPI() } }
+    @Published var apiPort: Int { didSet { defaults.set(apiPort, forKey: "apiPort"); applyAPI() } }
+    /// Jump to Live text when text arrives while another app is showing.
+    @Published var liveSwitches: Bool { didSet { defaults.set(liveSwitches, forKey: "liveSwitches") } }
+
     // Tools
     private let sound = ToolSound()
     @Published var metroBPM: Int { didSet { defaults.set(metroBPM, forKey: "metroBPM"); if metroOn { sound.startMetronome(bpm: metroBPM, beats: metroBeats); restartBeat() } } }
@@ -142,7 +155,7 @@ final class HubModel: ObservableObject {
     struct MenuGroup: Identifiable { let title: String; let items: [Program]; var id: String { title } }
     var menuGroups: [MenuGroup] {
         [MenuGroup(title: "Info", items: [.scores, .news, .mail, .agenda, .weather].filter { $0 != .mail || showMail }),
-         MenuGroup(title: "Reading", items: [.reader, .speed, .message]),
+         MenuGroup(title: "Reading", items: [.reader, .speed, .message, .live]),
          MenuGroup(title: "Tools", items: [.timer, .metronome, .tuner, .picker]),
          MenuGroup(title: "Fun", items: [.trivia, .facts])]
     }
@@ -325,6 +338,9 @@ final class HubModel: ObservableObject {
         volumeDownDouble = defaults.object(forKey: "volumeDownDouble") as? Int ?? 4
         doubleClickAction = defaults.object(forKey: "doubleClickAction") as? Int ?? 2
         gmailClientID = d.string(forKey: "gmailClientID") ?? ""
+        apiOn = d.bool(forKey: "apiOn")
+        apiPort = d.object(forKey: "apiPort") as? Int ?? Int(LocalAPI.defaultPort)
+        liveSwitches = d.object(forKey: "liveSwitches") as? Bool ?? true
         metroBPM = d.object(forKey: "metroBPM") as? Int ?? 100
         metroBeats = d.object(forKey: "metroBeats") as? Int ?? 4
         metroVisual = d.object(forKey: "metroVisual") as? Bool ?? true
@@ -377,6 +393,9 @@ final class HubModel: ObservableObject {
         link.translationMode = translationMode
         link.rearm = clickRearm
         sound.onPitch = { [weak self] hz in self?.heard(hz) }
+        api.onState = { [weak self] state in Task { @MainActor in self?.apiState = state } }
+        api.handler = { [weak self] request in await self?.answer(request) ?? (404, ["ok": false]) }
+        applyAPI()
         link.onHoldExit = { [weak self] in
             guard let self, self.holdSelects else { return false }
             self.input(.select)
@@ -504,7 +523,8 @@ final class HubModel: ObservableObject {
         }
 
         // Speed read moves on by the clock, and is the one app that sends screens faster than once a second.
-        if program == .metronome, metroOn, metroVisual, !menuOpen { link.pace = max(0.25, 60.0 / Double(max(1, metroBPM)) * 0.6) }
+        if program == .live, !menuOpen { link.pace = 0.35 }            // captions should keep up with speech
+        else if program == .metronome, metroOn, metroVisual, !menuOpen { link.pace = max(0.25, 60.0 / Double(max(1, metroBPM)) * 0.6) }
         else { link.pace = program == .speed && speedPlaying && !menuOpen ? SpeedRead.interval(wpm: speedWPM, chunk: speedChunk) : 1.0 }
         if program == .speed, speedPlaying, !menuOpen {
             let words = speedText()
@@ -646,6 +666,8 @@ final class HubModel: ObservableObject {
             openMenu()
         case .speed, .metronome, .tuner, .picker:
             break                                   // handled in toolInput
+        case .live:
+            if !next { openMenu() }
         }
     }
 
@@ -695,6 +717,52 @@ final class HubModel: ObservableObject {
             return false
         }
         return true
+    }
+
+    // MARK: Live text
+
+    private func applyAPI() {
+        if apiOn { api.start(port: UInt16(clamping: max(1024, apiPort))) } else { api.stop(); apiState = "Off." }
+    }
+
+    /// Text from outside the app: the local API, a Shortcuts action or a glasseshub:// link.
+    /// `start` also turns the display on if it's off.
+    func showLive(_ text: String, append: Bool, start: Bool = false) {
+        live.show(text, append: append)
+        liveReceivedAt = Date()
+        if start, !link.isRunning { startDisplay() }
+        if liveSwitches, program != .live { program = .live }
+        if program == .live, link.isRunning { tick() }                 // don't wait for the next quarter second
+    }
+    func clearLive() { live.clear() }
+
+    /// Opens a glasseshub:// link: glasseshub://show?text=Hello&append=1&start=1, glasseshub://clear
+    func open(url: URL) {
+        guard url.scheme?.lowercased() == "glasseshub" else { return }
+        let fields = LocalRequest.fields(url.query(percentEncoded: true) ?? "")
+        func truthy(_ key: String) -> Bool { ["1", "true", "yes"].contains((fields[key] ?? "").lowercased()) }
+        switch (url.host() ?? "").lowercased() {
+        case "show": if let text = fields["text"] { showLive(text, append: truthy("append"), start: truthy("start")) }
+        case "clear": clearLive()
+        case "start": if !link.isRunning { startDisplay() }
+        case "stop": if link.isRunning { stopDisplay() }
+        default: break
+        }
+    }
+
+    private func answer(_ request: LocalRequest) -> (Int, [String: Any]) {
+        let state: [String: Any] = ["ok": true, "display": link.isShowing ? "showing" : (link.isRunning ? "starting" : "off"), "app": program.rawValue]
+        switch request.path.lowercased() {
+        case "/show", "/text":
+            let (text, append) = request.textAndAppend
+            guard let text else { return (400, ["ok": false, "error": "Send the text as ?text=..., as JSON {\"text\": \"...\"}, or as a plain body."]) }
+            let start = ["1", "true", "yes"].contains((request.query["start"] ?? "").lowercased())
+            showLive(text, append: append, start: start)
+            return (200, state)
+        case "/clear": clearLive(); return (200, state)
+        case "/status", "/": return (200, state)
+        default: return (404, ["ok": false, "error": "Unknown path. Use /show, /clear or /status."])
+        }
     }
 
     // MARK: Tools
@@ -790,7 +858,7 @@ final class HubModel: ObservableObject {
             weatherStep = max(0, (weatherStep ?? 0) + 2)             // three views: two forward is one back
         case .facts, .reader:
             if earlierPage { pageStep(-1) }
-        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker:
+        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .live:
             break
         }
     }
@@ -956,6 +1024,8 @@ final class HubModel: ObservableObject {
         case .message:
             let card = Reader.note(title: "", body: messageText, screen: screen)
             return card.isEmpty ? Card(["Message", "Type one in the app."]) : card
+        case .live:
+            return live.card(screen: screen)
         case .speed:
             return SpeedRead.card(words: speedText(), index: speedIndex, size: speedChunk, playing: speedPlaying, wpm: speedWPM, screen: screen)
         case .metronome:

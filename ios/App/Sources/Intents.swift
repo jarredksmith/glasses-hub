@@ -38,6 +38,19 @@ struct GlassesDisplayIntent: AppIntent {
     @MainActor func perform() async throws -> some IntentResult { HubModel.shared.toggleDisplay(); return .result() }
 }
 
+struct GlassesShowTextIntent: AppIntent {
+    static var title: LocalizedStringResource = "Show text on glasses"
+    static var description = IntentDescription("Puts text on the glasses through Glasses Hub's Live text app. Use it at the end of a shortcut that produces text, such as a translation.")
+    static var openAppWhenRun = false
+    @Parameter(title: "Text") var text: String
+    @Parameter(title: "Add to what's showing", default: false) var append: Bool
+    @Parameter(title: "Start the display if it's off", default: true) var start: Bool
+    @MainActor func perform() async throws -> some IntentResult {
+        HubModel.shared.showLive(text, append: append, start: start)
+        return .result()
+    }
+}
+
 struct GlassesHubShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: GlassesNextIntent(), phrases: ["Next in \(.applicationName)"], shortTitle: "Next", systemImageName: "chevron.right")

@@ -90,7 +90,10 @@ public enum TextLayout {
         case "J": return 1.09
         default:
             guard let scalar = ch.unicodeScalars.first else { return 1.2 }
-            return scalar.value < 0x250 ? 1.2 : 2.17
+            // Latin, including the accented letters of Vietnamese and other European languages
+            if scalar.value < 0x250 || (0x1E00...0x1EFF).contains(scalar.value) { return 1.2 }
+            if (0x300...0x36F).contains(scalar.value) { return 0 }           // accents that sit on the letter before
+            return 2.17
         }
     }
     /// The width of a line, in average characters.
