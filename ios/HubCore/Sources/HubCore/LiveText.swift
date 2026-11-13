@@ -87,7 +87,7 @@ public struct LocalRequest: Equatable, Sendable {
     public static func response(status: Int = 200, json: [String: Any]) -> Data {
         let body = (try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])) ?? Data("{}".utf8)
         let reason = status == 200 ? "OK" : status == 404 ? "Not Found" : "Bad Request"
-        let head = "HTTP/1.1 \(status) \(reason)\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"
+        let head = "HTTP/1.1 \(status) \(reason)\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nConnection: close\r\n\r\n"
         return Data(head.utf8) + body
     }
 }

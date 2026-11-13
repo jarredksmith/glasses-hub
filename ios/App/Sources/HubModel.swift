@@ -858,6 +858,7 @@ final class HubModel: ObservableObject {
 
     private func answer(_ request: LocalRequest) -> (Int, [String: Any]) {
         let state: [String: Any] = ["ok": true, "display": link.isShowing ? "showing" : (link.isRunning ? "starting" : "off"), "app": program.rawValue]
+        if request.method == "OPTIONS" { return (200, ["ok": true]) }      // a web page asking permission first
         switch request.path.lowercased() {
         case "/show", "/text":
             let (text, append) = request.textAndAppend
