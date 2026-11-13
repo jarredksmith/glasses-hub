@@ -353,6 +353,16 @@ final class MailTests: XCTestCase {
         XCTAssertEqual(menu.lines.count, 5)
         XCTAssertTrue(menu.lines.contains("→ App 8"))
         XCTAssertEqual(AppMenu.card(titles: ["A", "B"], selected: 0, screen: Screen(size: .large)).lines[1], "＞ A")
+        let large = Screen(size: .large)
+        let hinted = AppMenu.card(titles: (1...10).map { "App \($0)" }, selected: 7, screen: large, hint: "Look up: open")
+        XCTAssertEqual(hinted.lines.count, large.rows)
+        XCTAssertEqual(hinted.lines.last, "Look up: open")
+        XCTAssertTrue(hinted.lines.contains { $0.hasSuffix("App 8") })
+        XCTAssertEqual(AppMenu.hint(select: "Look up", columns: 40), "Turn: move, Look up: open")
+        XCTAssertEqual(AppMenu.hint(select: "Look up", columns: 16), "Look up: open")
+        XCTAssertNil(AppMenu.hint(select: nil, columns: 40))
+        XCTAssertEqual(AppMenu.practiceCard(done: [true, false, false, false]).lines[1], "[x] Turn crown forward")
+        XCTAssertEqual(AppMenu.practiceCard(done: [true, true, true, true]).lines.count, 3)
         XCTAssertEqual(AppMenu.endCard(of: "headlines").lines.count, 3)
     }
 }

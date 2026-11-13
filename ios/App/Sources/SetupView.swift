@@ -39,8 +39,9 @@ struct SetupView: View {
                     ForEach(controls, id: \.0) { control in
                         LabeledContent(control.0, value: control.1)
                     }
+                    NavigationLink { PracticeView() } label: { Label("Try the controls", systemImage: "checklist") }
                 } header: { Text("Controls on the glasses") } footer: {
-                    Text("You can change what a look up and a double click do in Settings.")
+                    Text("Nothing opens until you look up: turning the crown only moves through the list. Try the controls once with your glasses on to get the feel. You can change what a look up and a double click do in Settings.")
                 }
                 Section {
                     Text("Glasses Hub is an independent project and isn't made or endorsed by RayNeo. It relies on how the glasses behave on Strix OS 1.0.6; a glasses update may change that.")

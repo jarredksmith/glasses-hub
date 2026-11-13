@@ -196,6 +196,12 @@ final class HubModel: ObservableObject {
 
     /// The apps on offer, on the phone and in the glasses' menu.
     var apps: [Program] { [.dashboard] + menuGroups.flatMap(\.items) }
+    /// How many more times the apps menu shows its reminder of the controls. Each thing opened from
+    /// the menu uses one up.
+    @Published var menuHintsLeft: Int { didSet { defaults.set(menuHintsLeft, forKey: "menuHintsLeft") } }
+    /// Trying the controls: the glasses show a checklist and each control ticks itself off.
+    @Published private(set) var practicing = false
+    @Published private(set) var practiced: [Bool] = [false, false, false, false]
     @Published var setupSeen: Bool { didSet { defaults.set(setupSeen, forKey: "setupSeen") } }
     @Published var mailQuery: String { didSet { defaults.set(mailQuery, forKey: "mailQuery"); mailDue = .distantPast } }
     @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "lookUp") } }
@@ -386,6 +392,7 @@ final class HubModel: ObservableObject {
         pickerOptions = d.string(forKey: "pickerOptions") ?? "Pizza\nTacos\nSushi\nBurgers"
         showMail = d.object(forKey: "showMail") as? Bool ?? !(d.string(forKey: "gmailClientID") ?? "").isEmpty
         // Anyone who already has the display set up doesn't need the first-run guide.
+        menuHintsLeft = d.object(forKey: "menuHintsLeft") as? Int ?? 8
         setupSeen = d.object(forKey: "setupSeen") != nil ? d.bool(forKey: "setupSeen") : (d.object(forKey: "crownPaging") != nil || d.object(forKey: "lookUp") != nil)
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
         scoresView = ScoresView(rawValue: d.string(forKey: "scoresView") ?? "") ?? .auto
@@ -444,16 +451,19 @@ final class HubModel: ObservableObject {
             return true
         }
         link.onDoubleClick = { [weak self] in
+            if self?.practice(3) == true { return }
             guard let self, self.crownPaging, self.link.isShowing else { return }
             self.gesture(self.doubleClickAction)
         }
         link.onCrown = { [weak self] direction in
+            if self?.practicing == true { if direction != 0 { _ = self?.practice(direction > 0 ? 0 : 1) }; return }
             guard let self, self.crownPaging, self.link.isShowing else { return }
             if direction == 0 { self.input(.select) }
             else if !self.scrollingBlock { self.input(direction > 0 ? .next : .previous) }   // in crown-scroll mode the crown just scrolls
         }
         link.onHeadRaise = { [weak self] in
             guard let self, self.link.isShowing else { return }
+            if self.practice(2) { return }
             if self.dashAsleep { self.link.record("Look up: dashboard back on."); self.wakeDashboard(); return }
             guard self.headPaging else { return }
             self.link.record("Look up.")
@@ -636,7 +646,7 @@ final class HubModel: ObservableObject {
         if link.isRunning {
             // Each screen goes up with a line of scroll room above it; that is what lets the glasses'
             // reports tell a turn back (select) from a turn forward (next).
-            let room = crownPaging && crownBack && !card.scrolls
+            let room = ((crownPaging && crownBack) || practicing) && !card.scrolls
             let sent = room
                 ? TextLayout.withScrollRoom(card.lines, rows: screen.rows, marker: "\u{00B7}").joined(separator: "\n") : text
             link.show(sent, scrolls: card.scrolls)
@@ -719,6 +729,7 @@ final class HubModel: ObservableObject {
 
     /// Opens what the menu's arrow is on: a group, the way back, or an app.
     private func menuSelect() {
+        if menuHintsLeft > 0 { menuHintsLeft -= 1 }
         if let g = menuGroup, menuGroups.indices.contains(g) {
             let items = menuGroups[g].items
             if menuIndex == 0 || items.isEmpty { menuGroup = nil; menuIndex = g + 1; return }
@@ -1057,6 +1068,27 @@ final class HubModel: ObservableObject {
     }
     func toggleDisplay() { if link.isRunning { stopDisplay() } else { startDisplay() } }
 
+    /// The control on the glasses that's set to select, for the menu's reminder.
+    private var selectControl: String? {
+        if headPaging, headAction == 1 { return "Look up" }
+        if crownPaging, doubleClickAction == 1 { return "Double click" }
+        return nil
+    }
+
+    func startPractice() {
+        practiced = [false, false, false, false]
+        practicing = true
+        if !link.isRunning { startDisplay() }
+    }
+    func stopPractice() { practicing = false }
+    /// Ticks a control off while practising. True when the report was used up by the practice.
+    private func practice(_ step: Int) -> Bool {
+        guard practicing, link.isShowing, practiced.indices.contains(step) else { return false }
+        practiced[step] = true
+        link.record("Controls check: \(["turn forward", "turn back", "look up", "double click"][step]) works.")
+        return true
+    }
+
     private func openMenu() {
         // Always the top level, with the arrow on where the current app lives.
         menuGroup = nil
@@ -1087,10 +1119,12 @@ final class HubModel: ObservableObject {
             let shown = pages.count - 1 - Int(testCardsUntil.timeIntervalSince(now) / 12)
             return Card(pages[max(0, min(pages.count - 1, shown))])
         }
+        if practicing { return AppMenu.practiceCard(done: practiced) }
         if dashAsleep { return Card(["\u{3000}"]) }
         if menuOpen {
             let title = menuGroup.flatMap { menuGroups.indices.contains($0) ? menuGroups[$0].title : nil } ?? "Apps"
-            return AppMenu.card(title: title, titles: menuTitles, selected: min(menuIndex, menuTitles.count - 1), screen: screen, glyphs: glyphs)
+            return AppMenu.card(title: title, titles: menuTitles, selected: min(menuIndex, menuTitles.count - 1), screen: screen, glyphs: glyphs,
+                                hint: menuHintsLeft > 0 ? AppMenu.hint(select: selectControl, columns: screen.columns) : nil)
         }
         if listEnd {
             let what: String

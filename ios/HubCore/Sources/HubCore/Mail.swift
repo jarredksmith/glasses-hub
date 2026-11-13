@@ -146,14 +146,35 @@ extension Agenda {
 
 /// The on-glasses list of apps, with a marker on the one a click would open.
 public enum AppMenu {
-    public static func card(title: String = "Apps", titles: [String], selected: Int, screen: Screen, glyphs: Glyphs = .plain) -> Card {
+    public static func card(title: String = "Apps", titles: [String], selected: Int, screen: Screen, glyphs: Glyphs = .plain, hint: String? = nil) -> Card {
         guard !titles.isEmpty else { return Card([title]) }
-        let room = max(1, screen.rows - 1)
+        // A reminder of the controls takes the bottom line, when there's a line to spare.
+        let hint = screen.rows >= 4 ? hint : nil
+        let room = max(1, screen.rows - (hint == nil ? 1 : 2))
         let start = max(0, min(titles.count - room, selected - room / 2))
         var lines = [title]
         for i in start..<min(titles.count, start + room) {
             lines.append((i == selected ? glyphs.next : glyphs.blank) + " " + titles[i])
         }
+        if let hint { lines.append(hint) }
+        return Card(lines)
+    }
+    /// The reminder under the menu: how to move, and how to open, whichever control is set to select.
+    public static func hint(select: String?, columns: Int) -> String? {
+        guard let select else { return nil }
+        let full = "Turn: move, \(select): open"
+        if TextLayout.measure(full) <= Double(columns) * 0.96 { return full }
+        let short = "\(select): open"
+        return TextLayout.measure(short) <= Double(columns) * 0.96 ? short : nil
+    }
+    /// The screen for trying each control, ticking them off as the glasses report them.
+    public static func practiceCard(done: [Bool]) -> Card {
+        let names = ["Turn crown forward", "Turn crown back", "Look up", "Double click crown"]
+        if done.count >= names.count, !done.prefix(names.count).contains(false) {
+            return Card(["Controls check", "All four work.", "You're set."])
+        }
+        var lines = ["Try each control"]
+        for (i, name) in names.enumerated() { lines.append((i < done.count && done[i] ? "[x] " : "[ ] ") + name) }
         return Card(lines)
     }
     /// Shown after the last item of a list, so there's a way out to the menu.
