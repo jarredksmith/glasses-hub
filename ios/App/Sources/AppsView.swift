@@ -122,8 +122,11 @@ struct ProgramSettings: View {
             }
         case .speed:
             Section {
-                Stepper("\(model.speedWPM) words a minute", value: $model.speedWPM, in: 100...400, step: 20)
-                Picker("Words at a time", selection: $model.speedChunk) { ForEach(1...3, id: \.self) { Text("\($0)").tag($0) } }
+                Stepper("\(model.speedWPM) words a minute", value: $model.speedWPM, in: 100...900, step: 20)
+                Picker("Words at a time", selection: $model.speedChunk) { ForEach(1...6, id: \.self) { Text("\($0)").tag($0) } }
+                if model.speedSize > model.speedChunk {
+                    Text("At this speed it shows \(model.speedSize) words at a time.").font(.footnote).foregroundStyle(.secondary)
+                }
                 Button(model.speedPlaying ? "Pause" : "Play") { model.toggleSpeedRead() }
                 Button("Back to the start") { model.restartSpeedRead() }
             } footer: {

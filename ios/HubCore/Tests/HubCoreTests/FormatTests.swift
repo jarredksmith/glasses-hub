@@ -499,6 +499,12 @@ final class DataFeedTests: XCTestCase {
         XCTAssertNil(FeedParser.read(feed, data: Data("[]".utf8), now: now))
         XCTAssertEqual(FeedParser.line(feed, reading: nil, note: "No answer", now: now, arrows: true), "Glucose: No answer")
     }
+    func testSpeedReadSize() {
+        XCTAssertEqual(SpeedRead.size(wpm: 200, chunk: 2), 2)
+        XCTAssertEqual(SpeedRead.size(wpm: 600, chunk: 1), 3)
+        XCTAssertEqual(SpeedRead.size(wpm: 900, chunk: 2), 5)
+        XCTAssertEqual(SpeedRead.interval(wpm: 900, chunk: 5), 60.0 * 5 / 900, accuracy: 0.001)
+    }
     func testHomeAssistantAndCustom() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let home = DataFeed(name: "Porch", kind: .homeAssistant, address: "http://homeassistant.local:8123", item: "sensor.porch_temp")

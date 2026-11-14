@@ -173,6 +173,8 @@ final class HubModel: ObservableObject {
     @Published private(set) var tunerNote = ""
     private var tunerHeardAt = Date.distantPast
     @Published var speedWPM: Int { didSet { defaults.set(speedWPM, forKey: "speedWPM"); speedAnchor() } }
+    /// Words per screen once the speed is taken into account.
+    var speedSize: Int { SpeedRead.size(wpm: speedWPM, chunk: speedChunk) }
     @Published var speedChunk: Int { didSet { defaults.set(speedChunk, forKey: "speedChunk"); speedAnchor() } }
     @Published private(set) var speedPlaying = false
     @Published private(set) var speedIndex = 0
@@ -611,12 +613,12 @@ final class HubModel: ObservableObject {
         listener.tick()
         if (program == .live || program == .translate), !menuOpen { link.pace = 0.35 }       // captions should keep up with speech
         else if program == .metronome, metroOn, metroVisual, !menuOpen { link.pace = max(0.25, 60.0 / Double(max(1, metroBPM)) * 0.6) }
-        else { link.pace = program == .speed && speedPlaying && !menuOpen ? SpeedRead.interval(wpm: speedWPM, chunk: speedChunk) : 1.0 }
+        else { link.pace = program == .speed && speedPlaying && !menuOpen ? SpeedRead.interval(wpm: speedWPM, chunk: speedSize) : 1.0 }
         if program == .speed, speedPlaying, !menuOpen {
             let words = speedText()
-            let step = SpeedRead.interval(wpm: speedWPM, chunk: speedChunk)
+            let step = SpeedRead.interval(wpm: speedWPM, chunk: speedSize)
             if now.timeIntervalSince(speedShownAt) >= step {
-                speedIndex = min(words.count, speedIndex + max(1, SpeedRead.chunk(words, at: speedIndex, size: speedChunk, width: screen.columns).count))
+                speedIndex = min(words.count, speedIndex + max(1, SpeedRead.chunk(words, at: speedIndex, size: speedSize, width: screen.columns).count))
                 speedShownAt = now
                 if speedIndex >= words.count { speedPlaying = false }
             }
@@ -1273,7 +1275,7 @@ final class HubModel: ObservableObject {
             return FeedParser.card(feeds, readings: feedReadings, notes: feedNotes, now: now, screen: screen, arrows: rich,
                                    turn: turn(Int((Double(feeds.count) / Double(max(1, screen.rows - 1))).rounded(.up)), now: now))
         case .speed:
-            return SpeedRead.card(words: speedText(), index: speedIndex, size: speedChunk, playing: speedPlaying, wpm: speedWPM, screen: screen)
+            return SpeedRead.card(words: speedText(), index: speedIndex, size: speedSize, playing: speedPlaying, wpm: speedWPM, screen: screen)
         case .metronome:
             return Metronome.card(bpm: metroBPM, beats: metroBeats, running: metroOn, beat: metroVisual ? metroBeat : nil, screen: screen)
         case .tuner:

@@ -228,6 +228,12 @@ public enum SpeedRead {
         max(floor, 60 * Double(max(1, chunk)) / Double(max(60, wpm)))
     }
 
+    /// Words per screen: what was asked for, or more when the speed needs it. The glasses take about
+    /// three screens a second, so 900 words a minute has to go five words at a time.
+    public static func size(wpm: Int, chunk: Int, floor: Double = 0.3) -> Int {
+        max(max(1, chunk), Int((Double(max(60, wpm)) * floor / 60).rounded(.up)))
+    }
+
     /// The chunk starting at `index`, kept inside the row width (a long word still gets its own turn).
     public static func chunk(_ words: [String], at index: Int, size: Int, width: Int) -> (text: String, count: Int) {
         guard words.indices.contains(index) else { return ("", 0) }
