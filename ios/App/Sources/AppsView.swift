@@ -64,6 +64,8 @@ struct ProgramSettings: View {
             case .live: liveText
             case .translate: liveTranslate
             case .feeds: FeedList()
+            case .word, .blackjack, .twenty: GameSettings(program: program)
+            case .planes, .tour: NearbySettings(program: program)
             }
         }
         .navigationTitle(program.title)

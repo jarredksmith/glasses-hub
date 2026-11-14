@@ -530,3 +530,127 @@ final class DataFeedTests: XCTestCase {
         XCTAssertEqual(card.lines, ["Data feeds", "Porch 71 °F", "BTC: waiting"])
     }
 }
+
+struct StepGenerator: RandomNumberGenerator {
+    var values: [UInt64]; var at = 0
+    mutating func next() -> UInt64 { defer { at += 1 }; return values[at % values.count] }
+}
+
+final class GamesTests: XCTestCase {
+    func testWordGame() {
+        XCTAssertGreaterThan(WordGame.words.count, 200)
+        XCTAssertEqual(Set(WordGame.words).count, WordGame.words.count)
+        XCTAssertTrue(WordGame.words.allSatisfy { $0.count >= 4 && $0.count <= 8 && $0.allSatisfy { $0.isLetter && $0.isUppercase } })
+        XCTAssertEqual(WordGame.daily(day: 20000), WordGame.daily(day: 20000))
+        XCTAssertNotEqual(WordGame.daily(day: 20000), WordGame.daily(day: 20001))
+        var game = WordGame(word: "apple", day: 1)
+        XCTAssertEqual(game.shown, "_ _ _ _ _")
+        game.guess()                                   // E
+        XCTAssertEqual(game.shown, "_ _ _ _ E")
+        XCTAssertEqual(game.cursor, "F")
+        game.move(-1)                                  // E is used, so back lands on D
+        XCTAssertEqual(game.cursor, "D")
+        game.guess()
+        XCTAssertEqual(game.misses, 1)
+        for letter in ["A", "P", "L"] { game.cursor = letter; game.guess() }
+        XCTAssertTrue(game.solved)
+        XCTAssertEqual(game.card(streak: 3, screen: Screen(size: .large)).lines[2], "Got it with 1 miss. Streak 3.")
+        var losing = WordGame(word: "APPLE")
+        for letter in ["Z", "X", "Q", "J", "K", "V"] { losing.cursor = letter; losing.guess() }
+        XCTAssertTrue(losing.lost)
+        XCTAssertEqual(losing.card(streak: 0, screen: Screen(size: .large)).lines[1], "It was APPLE")
+        let playing = WordGame(word: "APPLE").card(streak: 0, screen: Screen(size: .large))
+        XCTAssertEqual(playing.lines[2], "D  [ E ]  F")
+        XCTAssertLessThanOrEqual(playing.lines.count, Screen(size: .large).rows)
+    }
+    func testBlackjack() {
+        XCTAssertEqual(Blackjack.total([1, 13]).value, 21)
+        XCTAssertTrue(Blackjack.total([1, 6]).soft)
+        XCTAssertEqual(Blackjack.total([1, 6, 10]).value, 17)
+        XCTAssertEqual(Blackjack.total([1, 1, 9]).value, 21)
+        var game = Blackjack()
+        game.player = [10, 9]; game.dealer = [10, 7]; game.playing = true
+        var rng = SystemRandomNumberGenerator()
+        game.stand(using: &rng)
+        XCTAssertEqual(game.chips, 110)
+        XCTAssertEqual(game.result, "You win. +10")
+        game.player = [10, 6]; game.dealer = [10, 10]; game.playing = true; game.stake = 10
+        game.stand(using: &rng)
+        XCTAssertEqual(game.chips, 100)
+        game.player = [5, 6]; game.dealer = [10, 10]; game.playing = true
+        XCTAssertTrue(game.canDouble)
+        game.double(using: &rng)
+        XCTAssertFalse(game.playing)
+        XCTAssertEqual(game.stake, 20)
+        XCTAssertTrue(game.chips == 120 || game.chips == 80 || game.chips == 100)
+        for _ in 0..<300 {
+            game.deal(using: &rng)
+            while game.playing { if Blackjack.total(game.player).value < 15 { game.hit(using: &rng) } else { game.stand(using: &rng) } }
+            XCTAssertFalse(game.result.isEmpty)
+            XCTAssertLessThanOrEqual(game.card(screen: Screen(size: .large)).lines.count, 5)
+        }
+    }
+    func testTwentyQuestions() {
+        var game = TwentyQuestions()
+        game.start()
+        XCTAssertEqual(game.messages().count, 1)
+        game.take(reply: "Is it alive?\n")
+        XCTAssertEqual(game.phase, .asking)
+        XCTAssertTrue(game.answer(.no))
+        XCTAssertEqual(game.messages().map { $0["role"] ?? "" }, ["user", "assistant", "user"])
+        game.take(reply: "GUESS: a bicycle.")
+        XCTAssertEqual(game.phase, .guessing)
+        XCTAssertEqual(game.card(screen: Screen(size: .large)).lines[1], "Is it a bicycle?")
+        XCTAssertFalse(game.answer(.yes))
+        XCTAssertEqual(game.phase, .aiWon)
+        var long = TwentyQuestions(); long.start()
+        for turn in 1...20 {
+            long.take(reply: "Question \(turn)?")
+            let more = long.answer(.unsure)
+            XCTAssertEqual(more, turn < 20)
+            if turn == 19 { XCTAssertTrue(long.messages().last?["content"]?.contains("last turn") ?? false) }
+        }
+        XCTAssertEqual(long.phase, .playerWon)
+    }
+}
+
+final class NearbyTests: XCTestCase {
+    func testGeo() {
+        XCTAssertEqual(Geo.distance(35.0, -97.0, 35.0, -97.0), 0, accuracy: 0.001)
+        XCTAssertEqual(Geo.distance(35.0, -97.0, 36.0, -97.0), 111_195, accuracy: 300)
+        XCTAssertEqual(Geo.compass(Geo.bearing(35, -97, 36, -97)), "N")
+        XCTAssertEqual(Geo.compass(Geo.bearing(35, -97, 35, -96)), "E")
+        XCTAssertEqual(Geo.compass(Geo.bearing(35, -97, 34, -98)), "SW")
+        XCTAssertEqual(Geo.length(100, metric: false), "350 ft")
+        XCTAssertEqual(Geo.length(3218.7, metric: false), "2.0 mi")
+        XCTAssertEqual(Geo.length(404, metric: true), "400 m")
+    }
+    func testPlanes() {
+        let body = Data(#"{"ac":[{"hex":"a1","flight":"UAL123  ","t":"B738","r":"N12345","alt_baro":34025,"gs":451.3,"track":92.0,"baro_rate":0,"lat":35.10,"lon":-97.0},{"hex":"b2","flight":"N5GA","alt_baro":"ground","lat":35.0,"lon":-97.0},{"hex":"c3","r":"N77","alt_baro":2500,"gs":110,"track":270,"baro_rate":-640,"lat":35.01,"lon":-97.0}],"total":3}"#.utf8)
+        let planes = Planes.parse(body, latitude: 35.0, longitude: -97.0) ?? []
+        XCTAssertEqual(planes.map(\.name), ["N77", "UAL123"])
+        XCTAssertNil(Planes.parse(Data("oops".utf8), latitude: 0, longitude: 0))
+        let route = Planes.route(Data(#"{"response":{"flightroute":{"callsign":"UAL123","airline":{"name":"United Airlines"},"origin":{"iata_code":"DEN","municipality":"Denver"},"destination":{"iata_code":"ORD","municipality":"Chicago"}}}}"#.utf8))
+        XCTAssertEqual(route, PlaneRoute(from: "Denver", to: "Chicago", airline: "United Airlines"))
+        XCTAssertNil(Planes.route(Data(#"{"response":"unknown callsign"}"#.utf8)))
+        let screen = Screen(size: .large)
+        let card = Planes.card(planes, index: 1, routes: ["UAL123": route!], note: "", metric: false, arrows: true, screen: screen)
+        XCTAssertEqual(card.lines, ["UAL123 B738 2/2", "Denver → Chicago", "United Airlines", "34000 ft 519 mph", "6.9 mi N, heading E"])
+        XCTAssertEqual(Planes.card(planes, index: 0, routes: [:], note: "", metric: false, arrows: false, screen: screen).lines[1], "2500 ft 127 mph descending")
+        XCTAssertEqual(Planes.url(latitude: 35.46756, longitude: -97.51643)?.absoluteString, "https://api.adsb.lol/v2/lat/35.4676/lon/-97.5164/dist/15")
+        XCTAssertEqual(Planes.routeURL(callsign: "UAL 123")?.absoluteString, "https://api.adsbdb.com/v0/callsign/UAL123")
+    }
+    func testTour() {
+        let body = Data(#"{"batchcomplete":"","query":{"pages":{"11":{"pageid":11,"title":"Far Museum","extract":"A museum.\nIt is far.","coordinates":[{"lat":35.01,"lon":-97.0}]},"7":{"pageid":7,"title":"Near Fountain","extract":"A fountain.","coordinates":[{"lat":35.001,"lon":-97.0}]},"9":{"pageid":9,"title":"No place"}}}}"#.utf8)
+        let places = Tour.parse(body, latitude: 35.0, longitude: -97.0) ?? []
+        XCTAssertEqual(places.map(\.title), ["Near Fountain", "Far Museum"])
+        XCTAssertEqual(places[1].summary, "A museum. It is far.")
+        XCTAssertEqual(Tour.parse(Data(#"{"batchcomplete":""}"#.utf8), latitude: 0, longitude: 0), [])
+        XCTAssertNil(Tour.parse(Data("x".utf8), latitude: 0, longitude: 0))
+        XCTAssertEqual(Tour.moved(places, latitude: 35.011, longitude: -97.0).first?.title, "Far Museum")
+        let card = Tour.listCard(places, index: 0, note: "", metric: false, screen: Screen(size: .large))
+        XCTAssertEqual(card.lines, ["Nearby  1/2", "Near Fountain", "350 ft N", "Look up: read"])
+        let url = Tour.url(latitude: 35.0, longitude: -97.0)?.absoluteString ?? ""
+        XCTAssertTrue(url.contains("generator=geosearch") && url.contains("ggscoord=35.00000%7C-97.00000"))
+    }
+}

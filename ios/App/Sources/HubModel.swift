@@ -7,6 +7,7 @@ import HubCore
 enum Program: String, CaseIterable, Identifiable {
     case dashboard, scores, news, mail, agenda, weather, trivia, facts, timer, reader, message
     case speed, metronome, tuner, picker, live, translate, feeds
+    case word, blackjack, twenty, planes, tour
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -18,6 +19,8 @@ enum Program: String, CaseIterable, Identifiable {
         case .live: return "Live text"
         case .translate: return "Live translate"
         case .feeds: return "Data feeds"
+        case .word: return "Word game"; case .blackjack: return "Blackjack"; case .twenty: return "20 questions"
+        case .planes: return "Planes overhead"; case .tour: return "Walking tour"
         }
     }
     var icon: String {
@@ -30,6 +33,8 @@ enum Program: String, CaseIterable, Identifiable {
         case .live: return "captions.bubble"
         case .translate: return "translate"
         case .feeds: return "antenna.radiowaves.left.and.right"
+        case .word: return "textformat.abc"; case .blackjack: return "suit.spade"; case .twenty: return "questionmark.circle"
+        case .planes: return "airplane"; case .tour: return "figure.walk"
         }
     }
     var blurb: String {
@@ -52,6 +57,11 @@ enum Program: String, CaseIterable, Identifiable {
         case .live: return "Text sent by another app or a shortcut, such as live translation."
         case .translate: return "Listens through the phone and shows a running translation."
         case .feeds: return "Numbers from your own sources: Nightscout, Home Assistant, or any web address."
+        case .word: return "Guess the daily word a letter at a time."
+        case .blackjack: return "Turn to hit, look up to stand."
+        case .twenty: return "Think of something and an AI tries to guess it."
+        case .planes: return "The flight above you: where it's going, how high, which way to look."
+        case .tour: return "What's around you, from Wikipedia, as you walk."
         }
     }
 }
@@ -191,7 +201,8 @@ final class HubModel: ObservableObject {
         [MenuGroup(title: "Info", items: [.scores, .news, .mail, .agenda, .weather, .feeds].filter { $0 != .mail || showMail }),
          MenuGroup(title: "Reading", items: [.reader, .speed, .message, .live, .translate]),
          MenuGroup(title: "Tools", items: [.timer, .metronome, .tuner, .picker]),
-         MenuGroup(title: "Fun", items: [.trivia, .facts])]
+         MenuGroup(title: "Nearby", items: [.tour, .planes]),
+         MenuGroup(title: "Fun", items: [.word, .blackjack, .twenty, .trivia, .facts])]
     }
     @Published private(set) var menuGroup: Int?
     private var menuTitles: [String] {
@@ -207,6 +218,36 @@ final class HubModel: ObservableObject {
     /// Trying the controls: the glasses show a checklist and each control ticks itself off.
     @Published private(set) var practicing = false
     @Published private(set) var practiced: [Bool] = [false, false, false, false]
+    // Games
+    @Published private(set) var wordGame = WordGame(word: "GLASSES") {
+        didSet { if let data = try? JSONEncoder().encode(wordGame) { defaults.set(data, forKey: "wordGame") } }
+    }
+    @Published private(set) var wordStreak = 0 { didSet { defaults.set(wordStreak, forKey: "wordStreak") } }
+    private var wordWinDay = 0 { didSet { defaults.set(wordWinDay, forKey: "wordWinDay") } }
+    private var wordDoneDay = 0 { didSet { defaults.set(wordDoneDay, forKey: "wordDoneDay") } }
+    @Published private(set) var blackjack = Blackjack() { didSet { defaults.set(blackjack.chips, forKey: "blackjackChips") } }
+    @Published var blackjackBet: Int { didSet { defaults.set(blackjackBet, forKey: "blackjackBet") } }
+    @Published private(set) var twenty = TwentyQuestions()
+    private var twentyRun = 0
+    @Published var aiKey: String { didSet { Secrets.set("anthropic", aiKey.trimmingCharacters(in: .whitespacesAndNewlines)) } }
+    @Published var aiModel: String { didSet { defaults.set(aiModel, forKey: "aiModel") } }
+    // What's around the wearer
+    private let locator = Locator()
+    @Published private(set) var planes: [Aircraft] = []
+    @Published private(set) var planeRoutes: [String: PlaneRoute] = [:]
+    private var planeIndex = 0, planeNote = "", planesDue = Date.distantPast, routesAsked = Set<String>()
+    @Published private(set) var places: [NearbyPlace] = []
+    private var placeIndex = 0, tourOpen = false, tourNote = "", tourDue = Date.distantPast
+    private var tourAt: (latitude: Double, longitude: Double)?
+    private var tourSeen = Set<Int>()
+    @Published var tourAnnounce: Bool { didSet { defaults.set(tourAnnounce, forKey: "tourAnnounce") } }
+    private var metricUnits: Bool { Locale.current.measurementSystem == .metric }
+    /// Why the nearby apps have nothing to show, when it's about location.
+    var nearbyProblem: String? {
+        if locator.denied { return "Allow location for Glasses Hub in the iPhone's Settings." }
+        return locator.latitude == nil ? "Finding where you are…" : nil
+    }
+
     /// Values fetched from the wearer's own sources. Access tokens live in the Keychain, not here.
     @Published var feeds: [DataFeed] {
         didSet {
@@ -415,6 +456,10 @@ final class HubModel: ObservableObject {
         showMail = d.object(forKey: "showMail") as? Bool ?? !(d.string(forKey: "gmailClientID") ?? "").isEmpty
         // Anyone who already has the display set up doesn't need the first-run guide.
         menuHintsLeft = d.object(forKey: "menuHintsLeft") as? Int ?? 8
+        blackjackBet = d.object(forKey: "blackjackBet") as? Int ?? 10
+        aiKey = Secrets.get("anthropic")
+        aiModel = d.string(forKey: "aiModel") ?? "claude-haiku-5-5"
+        tourAnnounce = d.bool(forKey: "tourAnnounce")
         feeds = (d.data(forKey: "dataFeeds").flatMap { try? JSONDecoder().decode([DataFeed].self, from: $0) }) ?? []
         setupSeen = d.object(forKey: "setupSeen") != nil ? d.bool(forKey: "setupSeen") : (d.object(forKey: "crownPaging") != nil || d.object(forKey: "lookUp") != nil)
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
@@ -458,6 +503,11 @@ final class HubModel: ObservableObject {
         link.logEvents = logEvents
         mailSignedIn = google.signedIn
         link.translationMode = translationMode
+        // saved games (these have defaults, so they load once everything else is set up)
+        wordStreak = defaults.integer(forKey: "wordStreak"); wordWinDay = defaults.integer(forKey: "wordWinDay"); wordDoneDay = defaults.integer(forKey: "wordDoneDay")
+        if let saved = defaults.data(forKey: "wordGame").flatMap({ try? JSONDecoder().decode(WordGame.self, from: $0) }) { wordGame = saved }
+        else { let today = WordGame.day(Date()); wordGame = WordGame(word: WordGame.daily(day: today), day: today) }
+        if let chips = defaults.object(forKey: "blackjackChips") as? Int { blackjack.chips = chips }
         link.rearm = clickRearm
         sound.onPitch = { [weak self] hz in self?.heard(hz) }
         cloudTranslator.onMessage = { [weak self] data in self?.cloudMessage(data) }
@@ -498,6 +548,7 @@ final class HubModel: ObservableObject {
             guard let self, self.noticeBlocked, package != Bundle.main.bundleIdentifier else { return }
             self.overlays.push(Card(["Notification", TextLayout.headline(AppNames.name(bundle: package), screen: self.screen)]), seconds: min(self.alertSeconds, 6))
         }
+        locator.onMove = { [weak self] in self?.moved() }
         link.onStandbyRaise = { [weak self] in
             self?.link.record("Look up: bringing the page back.")
             self?.wakeDashboard()
@@ -594,6 +645,8 @@ final class HubModel: ObservableObject {
         if program == .agenda || program == .dashboard { agendaDue = .distantPast }
         pager = AutoPager(); pagesPaused = false
         listEnd = false; agendaStep = 0; weatherStep = nil; mailOpen = false
+        tourOpen = false; planeIndex = 0; planesDue = .distantPast
+        if program == .word { wordCheckDay() }
         if program == .mail { mailDue = .distantPast }
     }
 
@@ -656,7 +709,7 @@ final class HubModel: ObservableObject {
             card = currentCard(now: now)
             // Anything taller than the screen is shown a page at a time. Reading stops on the last page;
             // everything else starts over.
-            let readingText = !menuOpen && !listEnd && (program == .reader || (program == .news && reading != nil) || (program == .mail && mailOpen)
+            let readingText = !menuOpen && !listEnd && (program == .reader || (program == .news && reading != nil) || (program == .mail && mailOpen) || (program == .tour && tourOpen)
                                                         || (program == .agenda && agendaStep >= 2))
             if crownScroll && readingText {
                 // Crown mode: send the text in one block for the glasses to scroll. A block can only be so
@@ -770,6 +823,14 @@ final class HubModel: ObservableObject {
             if !next { toggleTranslate() }
         case .feeds:
             if !next { openMenu() } else { refreshFeeds() }
+        case .tour:
+            if tourOpen {
+                if !next { tourOpen = false } else if morePages { pageStep(1) } else { tourOpen = false; stepPlace(1) }
+            } else if next { stepPlace(1) }
+            else if places.indices.contains(placeIndex), !places[placeIndex].summary.isEmpty { tourOpen = true; pageRestart() }
+            else { tourDue = .distantPast }
+        case .word, .blackjack, .twenty, .planes:
+            break                                   // handled in toolInput
         }
     }
 
@@ -808,6 +869,45 @@ final class HubModel: ObservableObject {
             case .previous: speedIndex = max(0, speedIndex - 12)
             }
             speedAnchor()
+        case .word:
+            wordCheckDay()
+            switch what {
+            case .next: wordGame.move(1)
+            case .previous: wordGame.move(-1)
+            case .select:
+                if wordGame.over { wordGame = freshWord() }
+                else {
+                    wordGame.guess()
+                    if wordGame.over, let day = wordGame.day {
+                        wordDoneDay = day
+                        if wordGame.solved { wordStreak = wordWinDay == day - 1 ? wordStreak + 1 : 1; wordWinDay = day } else { wordStreak = 0 }
+                    }
+                }
+            }
+        case .blackjack:
+            var dice = SystemRandomNumberGenerator()
+            switch what {
+            case .next: blackjack.hit(using: &dice)
+            case .previous: blackjack.double(using: &dice)
+            case .select:
+                if blackjack.playing { blackjack.stand(using: &dice) } else { blackjack.bet = blackjackBet; blackjack.deal(using: &dice) }
+            }
+        case .twenty:
+            switch twenty.phase {
+            case .asking, .guessing:
+                let answer: TwentyQuestions.Answer = what == .next ? .yes : (what == .previous ? .no : .unsure)
+                if twenty.phase == .guessing, answer == .unsure { break }
+                if twenty.answer(answer) { askTwenty() }
+            case .waiting: break
+            case .failed: if what == .select { askTwenty() }
+            case .intro, .aiWon, .playerWon: if what == .select { startTwenty() }
+            }
+        case .planes:
+            switch what {
+            case .next: if !planes.isEmpty { planeIndex = (planeIndex + 1) % planes.count }
+            case .previous: if !planes.isEmpty { planeIndex = (planeIndex + planes.count - 1) % planes.count }
+            case .select: planesDue = .distantPast
+            }
         case .picker:
             let all = PickerMode.allCases
             let at = all.firstIndex(of: pickerMode) ?? 0
@@ -820,6 +920,109 @@ final class HubModel: ObservableObject {
             return false
         }
         return true
+    }
+
+    // MARK: Games
+
+    private func freshWord() -> WordGame {
+        let today = WordGame.day(Date())
+        if wordDoneDay != today { return WordGame(word: WordGame.daily(day: today), day: today) }
+        var dice = SystemRandomNumberGenerator()
+        return WordGame(word: WordGame.random(using: &dice, not: wordGame.word))
+    }
+    /// A daily word left over from an earlier day gives way to today's.
+    private func wordCheckDay() {
+        if let day = wordGame.day, day != WordGame.day(Date()) { wordGame = freshWord() }
+    }
+    func newWord() {
+        var dice = SystemRandomNumberGenerator()
+        wordGame = WordGame(word: WordGame.random(using: &dice, not: wordGame.word))
+    }
+    func resetChips() { blackjack = Blackjack() }
+
+    func startTwenty() { twenty.start(); askTwenty() }
+    private func askTwenty() {
+        let key = aiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { twenty.phase = .failed("Add your AI key in the app, under Apps > 20 questions."); return }
+        twenty.phase = .waiting
+        twentyRun += 1
+        let run = twentyRun, messages = twenty.messages()
+        let model = aiModel.trimmingCharacters(in: .whitespaces).isEmpty ? "claude-haiku-5-5" : aiModel.trimmingCharacters(in: .whitespaces)
+        Task {
+            let answer = await AIClient.ask(key: key, model: model, system: TwentyQuestions.system, messages: messages)
+            guard self.twentyRun == run, self.twenty.phase == .waiting else { return }
+            if let text = answer.text { self.twenty.take(reply: text) }
+            else { self.twenty.phase = .failed(answer.problem ?? "Couldn't reach the AI.") }
+        }
+    }
+
+    // MARK: Nearby
+
+    private func stepPlace(_ by: Int) {
+        if !places.isEmpty { placeIndex = ((placeIndex + by) % places.count + places.count) % places.count }
+        pageRestart()
+    }
+
+    /// The phone moved: measure the known places again and say so if one is now close.
+    private func moved() {
+        guard let latitude = locator.latitude, let longitude = locator.longitude, !places.isEmpty else { return }
+        let shown = places.indices.contains(placeIndex) ? places[placeIndex].id : nil
+        places = Tour.moved(places, latitude: latitude, longitude: longitude)
+        if tourOpen, let shown, let at = places.firstIndex(where: { $0.id == shown }) { placeIndex = at }
+        announcePlaces()
+    }
+    private func announcePlaces() {
+        guard let near = places.first(where: { $0.distance < 250 && !tourSeen.contains($0.id) }) else { return }
+        tourSeen.insert(near.id)
+        if tourAnnounce, program != .tour { alert(["Nearby", near.title, Tour.whereLine(near, metric: metricUnits)], source: .tour) }
+    }
+
+    private func refreshNearby(now: Date) {
+        let wantsPlanes = program == .planes && (link.isRunning || inFront)
+        let wantsTour = (program == .tour && (link.isRunning || inFront)) || (tourAnnounce && (link.isRunning || popUps))
+        locator.set(wantsPlanes || wantsTour)
+        guard let latitude = locator.latitude, let longitude = locator.longitude else { return }
+        if wantsPlanes, now >= planesDue, let url = Planes.url(latitude: latitude, longitude: longitude), fetching.insert("planes").inserted {
+            planesDue = now.addingTimeInterval(12)
+            Task {
+                let answer = await FeedFetch.get(url, headers: [:])
+                self.fetching.remove("planes")
+                if let data = answer.data, let fresh = Planes.parse(data, latitude: latitude, longitude: longitude) {
+                    let shown = self.planes.indices.contains(self.planeIndex) ? self.planes[self.planeIndex].id : nil
+                    self.planes = fresh; self.planeNote = ""
+                    self.planeIndex = fresh.firstIndex { $0.id == shown } ?? min(self.planeIndex, max(0, fresh.count - 1))
+                } else if self.planes.isEmpty { self.planeNote = answer.problem ?? "Couldn't read the flight data." }
+            }
+        }
+        if program == .planes, planes.indices.contains(planeIndex) {
+            let callsign = planes[planeIndex].callsign
+            if !callsign.isEmpty, let url = Planes.routeURL(callsign: callsign), routesAsked.insert(callsign).inserted {
+                Task {
+                    let answer = await FeedFetch.get(url, headers: [:])
+                    if let data = answer.data, let route = Planes.route(data) { self.planeRoutes[callsign] = route }
+                }
+            }
+        }
+        if wantsTour {
+            let far = tourAt.map { Geo.distance(latitude, longitude, $0.latitude, $0.longitude) > 300 } ?? true
+            if far || now >= tourDue, let url = Tour.url(latitude: latitude, longitude: longitude), fetching.insert("tour").inserted {
+                tourDue = now.addingTimeInterval(600); tourAt = (latitude, longitude)
+                Task {
+                    let answer = await FeedFetch.get(url, headers: ["User-Agent": "GlassesHub/2.0 (iPhone app; walking tour)"])
+                    self.fetching.remove("tour")
+                    if let data = answer.data, let fresh = Tour.parse(data, latitude: latitude, longitude: longitude) {
+                        let shown = self.places.indices.contains(self.placeIndex) ? self.places[self.placeIndex].id : nil
+                        self.places = fresh; self.tourNote = ""
+                        if let at = fresh.firstIndex(where: { $0.id == shown }), self.tourOpen { self.placeIndex = at }
+                        else { self.tourOpen = false; self.placeIndex = min(self.placeIndex, max(0, fresh.count - 1)) }
+                        self.announcePlaces()
+                    } else {
+                        if self.places.isEmpty { self.tourNote = answer.problem ?? "Couldn't read Wikipedia's answer." }
+                        self.tourDue = Date().addingTimeInterval(60); self.tourAt = nil
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Live translate
@@ -1070,11 +1273,13 @@ final class HubModel: ObservableObject {
             if earlierPage { pageStep(-1) } else if agendaStep > 0 { agendaStep -= 1; pageRestart() }
         case .weather:
             weatherStep = max(0, (weatherStep ?? 0) + 2)             // three views: two forward is one back
+        case .tour:
+            if tourOpen { if earlierPage { pageStep(-1) } } else { stepPlace(-1) }
         case .facts, .reader:
             if earlierPage { pageStep(-1) }
         case .live:
             if livePage > 0 { livePage -= 1 }
-        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .translate, .feeds:
+        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .translate, .feeds, .word, .blackjack, .twenty, .planes:
             break
         }
     }
@@ -1271,6 +1476,20 @@ final class HubModel: ObservableObject {
             return live.card(screen: screen, page: livePage)
         case .translate:
             return translateCard(screen: screen)
+        case .word:
+            return wordGame.card(streak: wordStreak, screen: screen)
+        case .blackjack:
+            return blackjack.card(screen: screen)
+        case .twenty:
+            return twenty.card(screen: screen)
+        case .planes:
+            return Planes.card(planes, index: planeIndex, routes: planeRoutes, note: nearbyProblem ?? planeNote, metric: metricUnits, arrows: rich, screen: screen)
+        case .tour:
+            if tourOpen, places.indices.contains(placeIndex) {
+                let place = places[placeIndex]
+                return Card([TextLayout.fit(place.title, width: screen.columns)] + lines(of: place.summary) + ["- Wikipedia -"], scrolls: true)
+            }
+            return Tour.listCard(places, index: placeIndex, note: nearbyProblem ?? tourNote, metric: metricUnits, screen: screen)
         case .feeds:
             return FeedParser.card(feeds, readings: feedReadings, notes: feedNotes, now: now, screen: screen, arrows: rich,
                                    turn: turn(Int((Double(feeds.count) / Double(max(1, screen.rows - 1))).rounded(.up)), now: now))
@@ -1322,6 +1541,7 @@ final class HubModel: ObservableObject {
 
     private func refreshData(now: Date) {
         refreshFeedData(now: now)
+        refreshNearby(now: now)
         let wantsScores = !leagues.isEmpty && (program == .scores || (program == .dashboard && dashScores) || (scoreAlerts && (link.isRunning || popUps)))
         if wantsScores, now >= scoresDue, fetching.insert("scores").inserted {
             scoresDue = now.addingTimeInterval(15)            // floor; refined when the answer is in
