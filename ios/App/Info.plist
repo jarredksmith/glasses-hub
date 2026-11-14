@@ -27,6 +27,12 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Data feeds may point at a server on the home network (Home Assistant), which is often plain http. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

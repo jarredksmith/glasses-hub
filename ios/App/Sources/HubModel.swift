@@ -6,7 +6,7 @@ import HubCore
 /// What can be on the glasses.
 enum Program: String, CaseIterable, Identifiable {
     case dashboard, scores, news, mail, agenda, weather, trivia, facts, timer, reader, message
-    case speed, metronome, tuner, picker, live, translate
+    case speed, metronome, tuner, picker, live, translate, feeds
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -17,6 +17,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .speed: return "Speed read"; case .metronome: return "Metronome"; case .tuner: return "Tuner"; case .picker: return "Dice & coin"
         case .live: return "Live text"
         case .translate: return "Live translate"
+        case .feeds: return "Data feeds"
         }
     }
     var icon: String {
@@ -28,6 +29,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .speed: return "bolt.horizontal"; case .metronome: return "metronome"; case .tuner: return "tuningfork"; case .picker: return "dice"
         case .live: return "captions.bubble"
         case .translate: return "translate"
+        case .feeds: return "antenna.radiowaves.left.and.right"
         }
     }
     var blurb: String {
@@ -49,6 +51,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .picker: return "Flip a coin, roll dice, or pick from your own list."
         case .live: return "Text sent by another app or a shortcut, such as live translation."
         case .translate: return "Listens through the phone and shows a running translation."
+        case .feeds: return "Numbers from your own sources: Nightscout, Home Assistant, or any web address."
         }
     }
 }
@@ -183,7 +186,7 @@ final class HubModel: ObservableObject {
     /// The menu on the glasses: the dashboard, then groups of apps.
     struct MenuGroup: Identifiable { let title: String; let items: [Program]; var id: String { title } }
     var menuGroups: [MenuGroup] {
-        [MenuGroup(title: "Info", items: [.scores, .news, .mail, .agenda, .weather].filter { $0 != .mail || showMail }),
+        [MenuGroup(title: "Info", items: [.scores, .news, .mail, .agenda, .weather, .feeds].filter { $0 != .mail || showMail }),
          MenuGroup(title: "Reading", items: [.reader, .speed, .message, .live, .translate]),
          MenuGroup(title: "Tools", items: [.timer, .metronome, .tuner, .picker]),
          MenuGroup(title: "Fun", items: [.trivia, .facts])]
@@ -202,6 +205,18 @@ final class HubModel: ObservableObject {
     /// Trying the controls: the glasses show a checklist and each control ticks itself off.
     @Published private(set) var practicing = false
     @Published private(set) var practiced: [Bool] = [false, false, false, false]
+    /// Values fetched from the wearer's own sources. Access tokens live in the Keychain, not here.
+    @Published var feeds: [DataFeed] {
+        didSet {
+            if let data = try? JSONEncoder().encode(feeds) { defaults.set(data, forKey: "dataFeeds") }
+            for old in oldValue where !feeds.contains(where: { $0.id == old.id }) {
+                Secrets.set("feed." + old.id.uuidString, ""); feedReadings[old.id] = nil; feedNotes[old.id] = nil; feedDue[old.id] = nil
+            }
+        }
+    }
+    @Published private(set) var feedReadings: [UUID: FeedReading] = [:]
+    @Published private(set) var feedNotes: [UUID: String] = [:]
+    private var feedDue: [UUID: Date] = [:]
     @Published var setupSeen: Bool { didSet { defaults.set(setupSeen, forKey: "setupSeen") } }
     @Published var mailQuery: String { didSet { defaults.set(mailQuery, forKey: "mailQuery"); mailDue = .distantPast } }
     @Published var headPaging: Bool { didSet { defaults.set(headPaging, forKey: "lookUp") } }
@@ -398,6 +413,7 @@ final class HubModel: ObservableObject {
         showMail = d.object(forKey: "showMail") as? Bool ?? !(d.string(forKey: "gmailClientID") ?? "").isEmpty
         // Anyone who already has the display set up doesn't need the first-run guide.
         menuHintsLeft = d.object(forKey: "menuHintsLeft") as? Int ?? 8
+        feeds = (d.data(forKey: "dataFeeds").flatMap { try? JSONDecoder().decode([DataFeed].self, from: $0) }) ?? []
         setupSeen = d.object(forKey: "setupSeen") != nil ? d.bool(forKey: "setupSeen") : (d.object(forKey: "crownPaging") != nil || d.object(forKey: "lookUp") != nil)
         mailQuery = d.string(forKey: "mailQuery") ?? "in:inbox category:primary"
         scoresView = ScoresView(rawValue: d.string(forKey: "scoresView") ?? "") ?? .auto
@@ -750,6 +766,8 @@ final class HubModel: ObservableObject {
             else if livePage < live.pageCount(screen: screen) - 1 { livePage += 1 } else { livePage = 0 }
         case .translate:
             if !next { toggleTranslate() }
+        case .feeds:
+            if !next { openMenu() } else { refreshFeeds() }
         }
     }
 
@@ -1054,7 +1072,7 @@ final class HubModel: ObservableObject {
             if earlierPage { pageStep(-1) }
         case .live:
             if livePage > 0 { livePage -= 1 }
-        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .translate:
+        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .translate, .feeds:
             break
         }
     }
@@ -1179,6 +1197,9 @@ final class HubModel: ObservableObject {
                 let left = timer.remaining(now: now)
                 lines.append(rich ? glyphs.meter(left / max(1, timer.duration), cells: 6) + " " + HubTimer.clock(left) : "Timer \(HubTimer.clock(left))")
             }
+            for feed in feeds where feed.onDashboard {
+                if let reading = feedReadings[feed.id] { add(glyphs.bullet, FeedParser.line(feed, reading: reading, now: now, arrows: rich)) }
+            }
             if dashNews, let top = news.first { add(glyphs.note, top.title) }
             if !dashNote.isEmpty { add(glyphs.star, dashNote) }
             return Dashboard.card(now: now, summaries: lines, screen: screen, rotate: pageSeconds == 0 ? 10 : max(4, pageSeconds))
@@ -1248,6 +1269,9 @@ final class HubModel: ObservableObject {
             return live.card(screen: screen, page: livePage)
         case .translate:
             return translateCard(screen: screen)
+        case .feeds:
+            return FeedParser.card(feeds, readings: feedReadings, notes: feedNotes, now: now, screen: screen, arrows: rich,
+                                   turn: turn(Int((Double(feeds.count) / Double(max(1, screen.rows - 1))).rounded(.up)), now: now))
         case .speed:
             return SpeedRead.card(words: speedText(), index: speedIndex, size: speedChunk, playing: speedPlaying, wpm: speedWPM, screen: screen)
         case .metronome:
@@ -1262,7 +1286,40 @@ final class HubModel: ObservableObject {
 
     // MARK: Data
 
+    func feedToken(_ id: UUID) -> String { Secrets.get("feed." + id.uuidString) }
+    func setFeedToken(_ id: UUID, _ token: String) {
+        Secrets.set("feed." + id.uuidString, token.trimmingCharacters(in: .whitespacesAndNewlines))
+        feedDue[id] = nil
+    }
+    /// Ask every feed again now (a crown turn on the feeds screen, or "Check now" in the app).
+    func refreshFeeds() { feedDue.removeAll(); refreshFeedData(now: Date(), all: true) }
+
+    private func refreshFeedData(now: Date, all: Bool = false) {
+        for feed in feeds {
+            let wanted = all || program == .feeds || (program == .dashboard && feed.onDashboard)
+            guard wanted, now >= (feedDue[feed.id] ?? .distantPast) else { continue }
+            guard let request = feed.request(token: feedToken(feed.id)) else {
+                if feedReadings[feed.id] == nil { feedNotes[feed.id] = "Not set up yet." }
+                continue
+            }
+            guard fetching.insert("feed." + feed.id.uuidString).inserted else { continue }
+            feedDue[feed.id] = now.addingTimeInterval(Double(max(1, feed.minutes)) * 60)
+            Task {
+                let answer = await FeedFetch.get(request.url, headers: request.headers)
+                self.fetching.remove("feed." + feed.id.uuidString)
+                guard let current = self.feeds.first(where: { $0.id == feed.id }) else { return }
+                if let data = answer.data, let reading = FeedParser.read(current, data: data, now: Date()) {
+                    self.feedReadings[feed.id] = reading; self.feedNotes[feed.id] = ""
+                } else {
+                    self.feedNotes[feed.id] = answer.problem ?? "The answer didn't have that value."
+                    self.feedDue[feed.id] = Date().addingTimeInterval(60)          // try again sooner after a miss
+                }
+            }
+        }
+    }
+
     private func refreshData(now: Date) {
+        refreshFeedData(now: now)
         let wantsScores = !leagues.isEmpty && (program == .scores || (program == .dashboard && dashScores) || (scoreAlerts && (link.isRunning || popUps)))
         if wantsScores, now >= scoresDue, fetching.insert("scores").inserted {
             scoresDue = now.addingTimeInterval(15)            // floor; refined when the answer is in

@@ -482,3 +482,45 @@ final class LiveTextTests: XCTestCase {
     }
 }
 
+final class DataFeedTests: XCTestCase {
+    func testNightscout() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var feed = DataFeed(kind: .nightscout, address: "my.site.example/")
+        let request = feed.request(token: "abc-123")
+        XCTAssertEqual(request?.url.absoluteString, "https://my.site.example/api/v1/entries.json?count=1&token=abc%2D123")
+        let stamp = Int((now.timeIntervalSince1970 - 240) * 1000)
+        let body = Data(#"[{"sgv":112,"direction":"Flat","date":\#(stamp)}]"#.utf8)
+        let reading = FeedParser.read(feed, data: body, now: now)
+        XCTAssertEqual(reading?.value, "112")
+        XCTAssertEqual(FeedParser.line(feed, reading: reading, now: now, arrows: true), "Glucose 112 → 4m ago")
+        XCTAssertEqual(FeedParser.line(feed, reading: reading, now: now, arrows: false), "Glucose 112 steady (4m ago)")
+        feed.unit = "mmol"
+        XCTAssertEqual(FeedParser.read(feed, data: body, now: now)?.value, "6.2")
+        XCTAssertNil(FeedParser.read(feed, data: Data("[]".utf8), now: now))
+        XCTAssertEqual(FeedParser.line(feed, reading: nil, note: "No answer", now: now, arrows: true), "Glucose: No answer")
+    }
+    func testHomeAssistantAndCustom() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let home = DataFeed(name: "Porch", kind: .homeAssistant, address: "http://homeassistant.local:8123", item: "sensor.porch_temp")
+        XCTAssertNil(home.request(token: ""))
+        XCTAssertEqual(home.request(token: "t")?.url.absoluteString, "http://homeassistant.local:8123/api/states/sensor.porch_temp")
+        XCTAssertEqual(home.request(token: "t")?.headers["Authorization"], "Bearer t")
+        let state = Data(#"{"state":"71.4","attributes":{"unit_of_measurement":"°F"}}"#.utf8)
+        XCTAssertEqual(FeedParser.read(home, data: state, now: now)?.value, "71.4 °F")
+        XCTAssertEqual(FeedParser.line(home, reading: FeedParser.read(home, data: state, now: now), now: now, arrows: true), "Porch 71.4 °F")
+
+        var custom = DataFeed(name: "BTC", kind: .custom, address: "https://example.com/p", item: "data.0.price", unit: "USD")
+        let json = Data(#"{"data":[{"price":64250.5}]}"#.utf8)
+        XCTAssertEqual(FeedParser.read(custom, data: json, now: now)?.value, "64250.5 USD")
+        custom.item = ""; custom.unit = ""
+        XCTAssertEqual(FeedParser.read(custom, data: Data("\n  All systems go \nmore".utf8), now: now)?.value, "All systems go")
+        XCTAssertEqual(FeedParser.read(custom, data: Data("42".utf8), now: now)?.value, "42")
+        custom.item = "missing.field"
+        XCTAssertNil(FeedParser.read(custom, data: json, now: now))
+
+        let old = FeedReading(value: "5", fetched: now.addingTimeInterval(-3600))
+        XCTAssertEqual(FeedParser.age(old, feed: custom, now: now), "60m ago")
+        let card = FeedParser.card([home, custom], readings: [home.id: FeedReading(value: "71 °F", fetched: now)], notes: [:], now: now, screen: Screen(size: .large), arrows: true, turn: 0)
+        XCTAssertEqual(card.lines, ["Data feeds", "Porch 71 °F", "BTC: waiting"])
+    }
+}

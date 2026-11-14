@@ -63,6 +63,7 @@ struct ProgramSettings: View {
             case .message: message
             case .live: liveText
             case .translate: liveTranslate
+            case .feeds: FeedList()
             }
         }
         .navigationTitle(program.title)
