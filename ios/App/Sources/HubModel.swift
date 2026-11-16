@@ -8,6 +8,7 @@ enum Program: String, CaseIterable, Identifiable {
     case dashboard, scores, news, mail, agenda, weather, trivia, facts, timer, reader, message
     case speed, metronome, tuner, picker, live, translate, feeds
     case word, blackjack, twenty, planes, tour
+    case chords, drums
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -21,6 +22,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .feeds: return "Data feeds"
         case .word: return "Word game"; case .blackjack: return "Blackjack"; case .twenty: return "20 questions"
         case .planes: return "Planes overhead"; case .tour: return "Walking tour"
+        case .chords: return "Guitar chords"; case .drums: return "Drum trainer"
         }
     }
     var icon: String {
@@ -35,6 +37,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .feeds: return "antenna.radiowaves.left.and.right"
         case .word: return "textformat.abc"; case .blackjack: return "suit.spade"; case .twenty: return "questionmark.circle"
         case .planes: return "airplane"; case .tour: return "figure.walk"
+        case .chords: return "guitars"; case .drums: return "music.quarternote.3"
         }
     }
     var blurb: String {
@@ -62,6 +65,8 @@ enum Program: String, CaseIterable, Identifiable {
         case .twenty: return "Think of something and an AI tries to guess it."
         case .planes: return "The flight above you: where it's going, how high, which way to look."
         case .tour: return "What's around you, from Wikipedia, as you walk."
+        case .chords: return "A chord chart that listens and moves on as you play."
+        case .drums: return "Learn a groove a bar at a time; it hears your kit."
         }
     }
 }
@@ -200,7 +205,8 @@ final class HubModel: ObservableObject {
     var menuGroups: [MenuGroup] {
         [MenuGroup(title: "Info", items: [.scores, .news, .mail, .agenda, .weather, .feeds].filter { $0 != .mail || showMail }),
          MenuGroup(title: "Reading", items: [.reader, .speed, .message, .live, .translate]),
-         MenuGroup(title: "Tools", items: [.timer, .metronome, .tuner, .picker]),
+         MenuGroup(title: "Music", items: [.chords, .drums, .metronome, .tuner]),
+         MenuGroup(title: "Tools", items: [.timer, .picker]),
          MenuGroup(title: "Nearby", items: [.tour, .planes]),
          MenuGroup(title: "Fun", items: [.word, .blackjack, .twenty, .trivia, .facts])]
     }
@@ -218,6 +224,27 @@ final class HubModel: ObservableObject {
     /// Trying the controls: the glasses show a checklist and each control ticks itself off.
     @Published private(set) var practicing = false
     @Published private(set) var practiced: [Bool] = [false, false, false, false]
+    // Music trainers
+    private let ear = MusicEar()
+    @Published var chordSong: String { didSet { defaults.set(chordSong, forKey: "chordSong"); loadChords() } }
+    @Published var chordText: String { didSet { defaults.set(chordText, forKey: "chordText"); if chordSong == "custom" { loadChords() } } }
+    @Published private(set) var chordOn = false
+    private var follower = ChordFollower(steps: [])
+    var chordCount: Int { follower.steps.count }
+    @Published var drumPattern: String { didSet { defaults.set(drumPattern, forKey: "drumPattern"); loadDrums() } }
+    @Published var drumText: String { didSet { defaults.set(drumText, forKey: "drumText"); if drumPattern == "custom" { loadDrums() } } }
+    @Published private(set) var drumOn = false
+    @Published private(set) var drumKit = DrumKit.standard {
+        didSet { if let data = try? JSONEncoder().encode(drumKit) { defaults.set(data, forKey: "drumKit") } }
+    }
+    @Published var drumSensitivity: Int { didSet { defaults.set(drumSensitivity, forKey: "drumSensitivity") } }
+    @Published private(set) var drumHeard = ""
+    /// While teaching the app the kit: what to hit next. Nil when not teaching.
+    @Published private(set) var drumCalibration: String?
+    private var calibrationStage = 0, calibrationHits = [DrumHit](), calibrationKit = DrumKit(voices: [:])
+    private var trainer = DrumTrainer(pattern: DrumPattern.library[1])
+    @Published private(set) var musicNote = ""
+
     // Games
     @Published private(set) var wordGame = WordGame(word: "GLASSES") {
         didSet { if let data = try? JSONEncoder().encode(wordGame) { defaults.set(data, forKey: "wordGame") } }
@@ -457,6 +484,11 @@ final class HubModel: ObservableObject {
         // Anyone who already has the display set up doesn't need the first-run guide.
         menuHintsLeft = d.object(forKey: "menuHintsLeft") as? Int ?? 8
         blackjackBet = d.object(forKey: "blackjackBet") as? Int ?? 10
+        chordSong = d.string(forKey: "chordSong") ?? "grace"
+        chordText = d.string(forKey: "chordText") ?? "[G]Put each chord in brackets [C]where it changes\n[D]One line of the song per [G]line"
+        drumPattern = d.string(forKey: "drumPattern") ?? "Basic rock"
+        drumText = d.string(forKey: "drumText") ?? "HH x-x-x-x-x-x-x-x-\nSD ----o-------o---\nBD o-------o-------"
+        drumSensitivity = d.object(forKey: "drumSensitivity") as? Int ?? 5
         aiKey = Secrets.get("anthropic")
         aiModel = d.string(forKey: "aiModel") ?? "claude-haiku-5-5"
         tourAnnounce = d.bool(forKey: "tourAnnounce")
@@ -503,6 +535,10 @@ final class HubModel: ObservableObject {
         link.logEvents = logEvents
         mailSignedIn = google.signedIn
         link.translationMode = translationMode
+        if let saved = defaults.data(forKey: "drumKit").flatMap({ try? JSONDecoder().decode(DrumKit.self, from: $0) }) { drumKit = saved }
+        loadChords(); loadDrums()
+        ear.onChroma = { [weak self] chroma, level in self?.heard(chroma: chroma, level: level) }
+        ear.onHit = { [weak self] hit in self?.heard(hit: hit) }
         // saved games (these have defaults, so they load once everything else is set up)
         wordStreak = defaults.integer(forKey: "wordStreak"); wordWinDay = defaults.integer(forKey: "wordWinDay"); wordDoneDay = defaults.integer(forKey: "wordDoneDay")
         if let saved = defaults.data(forKey: "wordGame").flatMap({ try? JSONDecoder().decode(WordGame.self, from: $0) }) { wordGame = saved }
@@ -664,7 +700,7 @@ final class HubModel: ObservableObject {
 
         // Speed read moves on by the clock, and is the one app that sends screens faster than once a second.
         listener.tick()
-        if (program == .live || program == .translate), !menuOpen { link.pace = 0.35 }       // captions should keep up with speech
+        if (program == .live || program == .translate || program == .chords || program == .drums), !menuOpen { link.pace = 0.3 }       // captions should keep up with speech
         else if program == .metronome, metroOn, metroVisual, !menuOpen { link.pace = max(0.25, 60.0 / Double(max(1, metroBPM)) * 0.6) }
         else { link.pace = program == .speed && speedPlaying && !menuOpen ? SpeedRead.interval(wpm: speedWPM, chunk: speedSize) : 1.0 }
         if program == .speed, speedPlaying, !menuOpen {
@@ -829,7 +865,7 @@ final class HubModel: ObservableObject {
             } else if next { stepPlace(1) }
             else if places.indices.contains(placeIndex), !places[placeIndex].summary.isEmpty { tourOpen = true; pageRestart() }
             else { tourDue = .distantPast }
-        case .word, .blackjack, .twenty, .planes:
+        case .word, .blackjack, .twenty, .planes, .chords, .drums:
             break                                   // handled in toolInput
         }
     }
@@ -869,6 +905,20 @@ final class HubModel: ObservableObject {
             case .previous: speedIndex = max(0, speedIndex - 12)
             }
             speedAnchor()
+        case .chords:
+            switch what {
+            case .next: follower.step(1)
+            case .previous: follower.step(-1)
+            case .select: toggleChords()
+            }
+        case .drums:
+            let names = DrumPattern.library.map(\.name) + ["custom"]
+            let at = names.firstIndex(of: drumPattern) ?? 0
+            switch what {
+            case .next: drumPattern = names[(at + 1) % names.count]
+            case .previous: drumPattern = names[(at + names.count - 1) % names.count]
+            case .select: toggleDrums()
+            }
         case .word:
             wordCheckDay()
             switch what {
@@ -920,6 +970,95 @@ final class HubModel: ObservableObject {
             return false
         }
         return true
+    }
+
+    // MARK: Music trainers
+
+    private func loadChords() {
+        let chart = chordSong == "custom" ? chordText : (ChordChart.songs.first { $0.id == chordSong }?.chart ?? "")
+        follower = ChordFollower(steps: ChordChart.parse(chart))
+    }
+    private var chordTitle: String { ChordChart.songs.first { $0.id == chordSong }?.title ?? "My chart" }
+    func restartChords() { follower.restart() }
+    func toggleChords() {
+        if chordOn { ear.stop(); chordOn = false; keepAwake.resume(); return }
+        musicNote = ""
+        Task {
+            let problem = await ear.start(.chords)
+            self.chordOn = problem == nil; self.drumOn = false
+            self.musicNote = problem ?? ""
+        }
+    }
+    private func heard(chroma: [Double], level: Double) {
+        guard chordOn, program == .chords, !menuOpen else { return }
+        if follower.hear(chroma: chroma, level: level), link.isRunning { tick() }
+    }
+
+    private func loadDrums() {
+        let pattern = drumPattern == "custom" ? DrumPattern.parse(name: "My pattern", drumText) : DrumPattern.library.first { $0.name == drumPattern }
+        trainer = DrumTrainer(pattern: pattern ?? DrumPattern(name: "My pattern", bars: []))
+    }
+    func restartDrums() { trainer.restart() }
+    func toggleDrums() {
+        if drumOn { ear.stop(); drumOn = false; drumCalibration = nil; keepAwake.resume(); return }
+        musicNote = ""
+        Task {
+            let problem = await ear.start(.drums)
+            self.drumOn = problem == nil; self.chordOn = false
+            self.musicNote = problem ?? ""
+        }
+    }
+    private func heard(hit: DrumHit) {
+        guard drumOn else { return }
+        // sensitivity 5 is the ear's own threshold; each step either way moves the loudness a hit must reach
+        let quiet = pow(1.6, Double(5 - drumSensitivity)) * 0.004
+        guard hit.level >= quiet else { return }
+        if drumCalibration != nil { calibrate(with: hit); return }
+        let drums = drumKit.identify(hit)
+        drumHeard = Drum.allCases.filter { drums.contains($0) }.map(\.name).joined(separator: " + ")
+        guard program == .drums, !menuOpen else { return }
+        _ = trainer.hit(drums, at: hit.time)
+        if link.isRunning { tick() }
+    }
+
+    private static let calibrationOrder: [Drum] = [.kick, .snare, .hat, .tom]
+    private func calibrationPrompt() -> String {
+        let drum = HubModel.calibrationOrder[calibrationStage]
+        return "Hit the \(drum.name) \(4 - calibrationHits.count) more time\(calibrationHits.count == 3 ? "" : "s"), about a second apart."
+    }
+    func startCalibration() {
+        calibrationStage = 0; calibrationHits = []; calibrationKit = DrumKit(voices: [:])
+        Task {
+            if !self.drumOn {
+                let problem = await self.ear.start(.drums)
+                self.drumOn = problem == nil; self.chordOn = false; self.musicNote = problem ?? ""
+            }
+            if self.drumOn { self.drumCalibration = self.calibrationPrompt() }
+        }
+    }
+    func cancelCalibration() { drumCalibration = nil }
+    func skipCalibrationStage() { calibrationHits = []; nextCalibrationStage() }
+    func forgetKit() { drumKit = DrumKit.standard }
+    private func calibrate(with hit: DrumHit) {
+        // hits less than a third of a second after the last are the same drum still ringing
+        if let last = calibrationHits.last, hit.time - last.time < 0.3 { return }
+        calibrationHits.append(hit)
+        if calibrationHits.count >= 4 {
+            if let voice = DrumKit.learn(calibrationHits) { calibrationKit.voices[HubModel.calibrationOrder[calibrationStage]] = voice }
+            calibrationHits = []
+            nextCalibrationStage()
+        } else { drumCalibration = calibrationPrompt() }
+    }
+    private func nextCalibrationStage() {
+        calibrationStage += 1
+        if calibrationStage < HubModel.calibrationOrder.count { drumCalibration = calibrationPrompt(); return }
+        drumCalibration = nil
+        // a kit needs at least a kick and a snare to be worth using
+        if calibrationKit.voices[.kick] != nil, calibrationKit.voices[.snare] != nil {
+            calibrationKit.calibrated = true
+            drumKit = calibrationKit
+            musicNote = "Learned your kit."
+        } else { musicNote = "Not enough to go on. Teach it at least the kick and the snare." }
     }
 
     // MARK: Games
@@ -1248,6 +1387,7 @@ final class HubModel: ObservableObject {
     private func stopTools() {
         if metroOn { sound.stopMetronome(); metroOn = false; restartBeat() }
         if tunerOn { sound.stopListening(); tunerOn = false; tunerReading = nil }
+        if (chordOn && program != .chords) || (drumOn && program != .drums) { ear.stop(); chordOn = false; drumOn = false; drumCalibration = nil }
         if translateOn, program != .translate { stopTranslate() }
         speedPlaying = false
     }
@@ -1279,7 +1419,7 @@ final class HubModel: ObservableObject {
             if earlierPage { pageStep(-1) }
         case .live:
             if livePage > 0 { livePage -= 1 }
-        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .translate, .feeds, .word, .blackjack, .twenty, .planes:
+        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .translate, .feeds, .word, .blackjack, .twenty, .planes, .chords, .drums:
             break
         }
     }
@@ -1476,6 +1616,11 @@ final class HubModel: ObservableObject {
             return live.card(screen: screen, page: livePage)
         case .translate:
             return translateCard(screen: screen)
+        case .chords:
+            if !musicNote.isEmpty, !chordOn { return Card(["Guitar chords"] + TextLayout.wrap(musicNote, width: screen.columns)) }
+            return follower.card(title: chordTitle, listening: chordOn, screen: screen)
+        case .drums:
+            return trainer.card(listening: drumOn, note: drumCalibration ?? "", arrows: rich, screen: screen)
         case .word:
             return wordGame.card(streak: wordStreak, screen: screen)
         case .blackjack:

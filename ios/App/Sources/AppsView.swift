@@ -66,6 +66,7 @@ struct ProgramSettings: View {
             case .feeds: FeedList()
             case .word, .blackjack, .twenty: GameSettings(program: program)
             case .planes, .tour: NearbySettings(program: program)
+            case .chords, .drums: MusicSettings(program: program)
             }
         }
         .navigationTitle(program.title)

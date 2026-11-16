@@ -654,3 +654,161 @@ final class NearbyTests: XCTestCase {
         XCTAssertTrue(url.contains("generator=geosearch") && url.contains("ggscoord=35.00000%7C-97.00000"))
     }
 }
+
+final class MusicTests: XCTestCase {
+    /// A strummed chord: each note with a few overtones, like a string.
+    func strum(_ midi: [Int], rate: Double = 44_100, count: Int = 8192) -> [Float] {
+        var out = [Float](repeating: 0, count: count)
+        for note in midi {
+            let f = 440 * pow(2, Double(note - 69) / 12)
+            for i in 0..<count {
+                let w: Double = 2 * Double.pi * f * Double(i) / rate
+                let one: Double = sin(w), two: Double = 0.5 * sin(2 * w), three: Double = 0.25 * sin(3 * w)
+                out[i] += Float(0.1 * (one + two + three))
+            }
+        }
+        return out
+    }
+    func testChordNamesAndCharts() {
+        XCTAssertEqual(ChordChart.notes(of: "G"), [7, 11, 2])
+        XCTAssertEqual(ChordChart.notes(of: "Em"), [4, 7, 11])
+        XCTAssertEqual(ChordChart.notes(of: "F#m7"), [6, 9, 1, 4])
+        XCTAssertEqual(ChordChart.notes(of: "Bb"), [10, 2, 5])
+        XCTAssertEqual(ChordChart.notes(of: "D/F#"), ChordChart.notes(of: "D"))
+        XCTAssertNil(ChordChart.notes(of: "Hello"))
+        XCTAssertNil(ChordChart.notes(of: "Am I"))
+        let steps = ChordChart.parse("[G]Amazing grace, how [C]sweet the [G]sound\nThat saved a wretch like [D]me")
+        XCTAssertEqual(steps.map(\.chord), ["G", "C", "G", "D"])
+        XCTAssertEqual(steps[2].lyric, "sound / That saved a wretch like")
+        let over = ChordChart.parse("G      C\nAmazing grace\nD\nme")
+        XCTAssertEqual(over.map(\.chord), ["G", "C", "D"])
+        XCTAssertEqual(over[0].lyric, "Amazing grace")
+        for song in ChordChart.songs {
+            let parsed = ChordChart.parse(song.chart)
+            XCTAssertGreaterThan(parsed.count, 5, song.title)
+            XCTAssertTrue(parsed.allSatisfy { ChordChart.notes(of: $0.chord) != nil })
+        }
+    }
+    func testFollowingChords() {
+        let g = strum([43, 47, 50, 55, 59, 67]), c = strum([48, 52, 55, 60, 64]), d = strum([50, 57, 62, 66]), em = strum([40, 47, 52, 55, 59, 64])
+        let heardG = Chroma.compute(g, sampleRate: 44_100)
+        XCTAssertGreaterThan(Chroma.score(heardG.chroma, notes: ChordChart.notes(of: "G")!), Chroma.score(heardG.chroma, notes: ChordChart.notes(of: "C")!) + 0.2)
+        XCTAssertGreaterThan(heardG.level, 0.05)
+        var follower = ChordFollower(steps: ChordChart.parse("[G]one [C]two [D]three [Em]four [G]five"))
+        func play(_ sound: [Float], times: Int = 3) -> Int {
+            var moves = 0
+            for _ in 0..<times { let h = Chroma.compute(sound, sampleRate: 44_100); if follower.hear(chroma: h.chroma, level: h.level) { moves += 1 } }
+            return moves
+        }
+        XCTAssertEqual(play(g), 0)                      // still on the first chord
+        XCTAssertEqual(play(c), 1)
+        XCTAssertEqual(follower.index, 1)
+        XCTAssertEqual(play(c), 0)                      // holding C doesn't run ahead
+        XCTAssertEqual(play(d), 1)
+        XCTAssertEqual(play(em), 1)
+        XCTAssertEqual(play(g), 1)
+        XCTAssertTrue(follower.finished)
+        XCTAssertEqual(play([Float](repeating: 0, count: 8192)), 0)
+        let card = ChordFollower(steps: ChordChart.parse(ChordChart.songs[0].chart)).card(title: "x", listening: true, screen: Screen(size: .large))
+        XCTAssertTrue(card.lines[0].hasSuffix("then C"))
+        XCTAssertLessThanOrEqual(card.lines.count, 5)
+    }
+    func testDrumPatterns() {
+        XCTAssertEqual(DrumPattern.library.count, 8)
+        for pattern in DrumPattern.library {
+            XCTAssertFalse(pattern.bars.isEmpty, pattern.name)
+            XCTAssertTrue(pattern.bars.allSatisfy { $0.count == pattern.steps })
+            for size in [TextSize.large, .small] {
+                let screen = Screen(size: size)
+                let card = DrumTrainer(pattern: pattern).card(listening: true, arrows: true, screen: screen)
+                XCTAssertLessThanOrEqual(card.lines.count, screen.rows, pattern.name)
+                XCTAssertTrue(card.lines.dropFirst().allSatisfy { Grid.cells($0) <= screen.wideColumns }, pattern.name)
+            }
+        }
+        let rock = DrumPattern.library[1]
+        XCTAssertEqual(rock.bars[0][0], [.hat, .kick])
+        XCTAssertEqual(rock.bars[0][4], [.hat, .snare])
+        XCTAssertNil(DrumPattern.parse(name: "x", "nothing here"))
+        var trainer = DrumTrainer(pattern: rock)
+        XCTAssertFalse(trainer.hit([.snare], at: 0))                // the bar starts on a kick
+        XCTAssertEqual(trainer.wrong, 1)
+        // one bar at 120 bpm: eighth notes a quarter of a second apart
+        let bar: [Set<Drum>] = [[.kick, .hat], [.hat], [.snare], [], [.kick], [.hat], [.snare, .hat], [.hat]]
+        for (i, heard) in bar.enumerated() { XCTAssertTrue(trainer.hit(heard, at: 1 + Double(i) * 0.25), "hit \(i)") }
+        XCTAssertEqual(trainer.laps, 1)
+        XCTAssertEqual(trainer.tempo, 120)
+        XCTAssertEqual(trainer.step, 0)
+        XCTAssertTrue(DrumTrainer.matches(heard: [.snare], expected: [.tom]))
+        XCTAssertFalse(DrumTrainer.matches(heard: [.kick], expected: [.hat]))
+        let lines = DrumTrainer(pattern: rock).card(listening: true, arrows: true, screen: Screen(size: .large)).lines
+        XCTAssertEqual(lines[1], "ＨＨｘ－ｘ－ｘ－ｘ－ｘ－ｘ－ｘ－ｘ－")
+        XCTAssertEqual(lines[4], "\u{3000}\u{3000}▲")
+    }
+    func testHearingDrums() {
+        let rate = 44_100.0
+        var seed: UInt64 = 42
+        func noise() -> Double {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            let part = Int((seed >> 33) % 2000)
+            return Double(part) / 1000 - 1
+        }
+        func silence(_ seconds: Double) -> [Float] { [Float](repeating: 0, count: Int(seconds * rate)) }
+        func kick() -> [Float] {
+            (0..<Int(0.15 * rate)).map { i in
+                let t: Double = Double(i) / rate
+                let tone: Double = sin(2 * Double.pi * 60 * t), fade: Double = exp(-t * 25)
+                return Float(0.8 * tone * fade)
+            }
+        }
+        func hat() -> [Float] {
+            var last = 0.0, last2 = 0.0
+            return (0..<Int(0.05 * rate)).map { i in
+                let t: Double = Double(i) / rate, n: Double = noise()
+                let high: Double = n - 2 * last + last2          // noise with the lows taken out
+                last2 = last; last = n
+                let fade: Double = exp(-t * 90)
+                return Float(0.08 * high * fade)
+            }
+        }
+        func snare() -> [Float] {
+            var smooth = 0.0
+            return (0..<Int(0.12 * rate)).map { i in
+                let t: Double = Double(i) / rate
+                let n: Double = noise(); smooth += 0.35 * (n - smooth)
+                let tone: Double = 0.35 * sin(2 * Double.pi * 400 * t), fade: Double = exp(-t * 35)
+                return Float((tone + 0.3 * smooth + 0.05 * n) * fade)
+            }
+        }
+        func mixed(_ a: [Float], _ b: [Float]) -> [Float] {
+            var out = [Float](repeating: 0, count: max(a.count, b.count))
+            for i in a.indices { out[i] += a[i] }
+            for i in b.indices { out[i] += b[i] }
+            return out
+        }
+        func hear(_ sound: [Float]) -> [DrumHit] {
+            var ear = DrumEar(sampleRate: rate)
+            let audio = silence(0.3) + sound + silence(0.3)
+            var hits = [DrumHit]()
+            var at = 0
+            while at < audio.count { let end = min(audio.count, at + 4096); hits += ear.process(Array(audio[at..<end])); at = end }
+            return hits
+        }
+        let kit = DrumKit.standard
+        let k = hear(kick()), s = hear(snare()), h = hear(hat())
+        XCTAssertEqual(k.count, 1); XCTAssertEqual(s.count, 1); XCTAssertEqual(h.count, 1)
+        XCTAssertEqual(k.first.map(kit.identify), [.kick])
+        XCTAssertEqual(s.first.map(kit.identify), [.snare])
+        XCTAssertEqual(h.first.map(kit.identify), [.hat])
+        XCTAssertEqual(k.first?.time ?? 0, 0.3, accuracy: 0.03)
+        // a kit learned from these sounds tells pairs apart too
+        var learned = DrumKit(voices: [:])
+        learned.calibrated = true
+        learned.voices[.kick] = DrumKit.learn(k); learned.voices[.snare] = DrumKit.learn(s); learned.voices[.hat] = DrumKit.learn(h)
+        XCTAssertEqual(hear(mixed(kick(), hat())).first.map(learned.identify), [.kick, .hat])
+        XCTAssertEqual(hear(mixed(kick(), snare())).first.map(learned.identify), [.kick, .snare])
+        XCTAssertEqual(hear(hat()).first.map(learned.identify), [.hat])
+        // a groove: hits a quarter second apart are each heard, including a hat right after a kick
+        let groove = hear(kick() + silence(0.1) + hat() + silence(0.2) + snare() + silence(0.13) + hat())
+        XCTAssertEqual(groove.map(learned.identify), [[.kick], [.hat], [.snare], [.hat]])
+    }
+}
