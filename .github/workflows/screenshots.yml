@@ -1,4 +1,4 @@
-# Runs the Glasses Hub iPhone app in the iOS Simulator on a GitHub Mac and saves a screenshot of
+# App Store size (6.9 inch, Pro Max). Runs the Glasses Hub iPhone app in the iOS Simulator on a GitHub Mac and saves a screenshot of
 # each tab and of the first-run setup guide. Download them from the run's "screenshots" artifact.
 name: App screenshots
 
@@ -38,7 +38,7 @@ jobs:
       - name: Take the screenshots
         run: |
           APP=$(find "$RUNNER_TEMP/dd/Build/Products" -name "GlassesHub.app" -maxdepth 2 | head -1)
-          UDID=$(xcrun simctl list devices available | grep -E "iPhone [0-9]+ Pro \(" | tail -1 | grep -oE "[0-9A-F-]{36}")
+          UDID=$(xcrun simctl list devices available | grep -E "iPhone [0-9]+ Pro Max \(" | tail -1 | grep -oE "[0-9A-F-]{36}")
           [ -n "$UDID" ] || UDID=$(xcrun simctl list devices available | grep -E "iPhone" | tail -1 | grep -oE "[0-9A-F-]{36}")
           echo "App: $APP  Simulator: $UDID"
           xcrun simctl boot "$UDID"
