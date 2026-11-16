@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glasses Hub privacy policy</title>
+<style>
+  body { font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1c1c1e; background: #fff; margin: 0; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 4px; }
+  h2 { font-size: 20px; margin: 32px 0 8px; }
+  p, li { margin: 8px 0; }
+  .date { color: #6b6b70; margin: 0 0 24px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 15px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid #e3e3e8; }
+  th { background: #f4f4f7; }
+  a { color: #0a60d0; }
+  @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } th { background: #1e1e22; } th, td { border-color: #333; } .date { color: #a0a0a8; } a { color: #6cb0ff; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Glasses Hub privacy policy</h1>
+<p class="date">Last updated 16 November 2026</p>
+
+<p>Glasses Hub is an iPhone app that shows text on RayNeo iO smart glasses. It is made by Jarred Smith, an independent developer. It is not made or endorsed by RayNeo.</p>
+
+<h2>The short version</h2>
+<ul>
+  <li>Glasses Hub has no accounts, no ads and no analytics.</li>
+  <li>The developer does not collect, receive or store any information about you or how you use the app.</li>
+  <li>Your settings and anything you type stay on your iPhone. Access keys and tokens are kept in the iPhone's Keychain.</li>
+  <li>Some features fetch information from outside services, and a few optional ones send those services something of yours. Those are listed below. Each is off until you use that feature.</li>
+</ul>
+
+<h2>What stays on your iPhone</h2>
+<ul>
+  <li><strong>Bluetooth.</strong> The app talks to your glasses over Bluetooth to show text and to read the crown and head movements. Nothing from the glasses is sent anywhere else.</li>
+  <li><strong>Calendar.</strong> If you allow it, the app reads today's events to show them on the glasses. They are not sent anywhere.</li>
+  <li><strong>Microphone, for the tuner.</strong> The tuner listens for pitch on the phone. Nothing is recorded or sent.</li>
+  <li><strong>Text you paste or send in.</strong> Reader text, messages, and text sent by Shortcuts or other apps through the local address stay on the phone.</li>
+</ul>
+
+<h2>Features that contact an outside service</h2>
+<p>These requests go straight from your iPhone to the service named. Like any internet request, the service can see your IP address. The developer never sees these requests.</p>
+<table>
+  <tr><th>Feature</th><th>Service</th><th>What is sent</th></tr>
+  <tr><td>Scores</td><td>ESPN</td><td>The leagues you chose</td></tr>
+  <tr><td>Weather</td><td>Open-Meteo</td><td>The city you typed</td></tr>
+  <tr><td>News</td><td>The news sources you pick (BBC, NPR and others)</td><td>Nothing beyond the request</td></tr>
+  <tr><td>Trivia and facts</td><td>Open Trivia Database, Useless Facts, Wikimedia</td><td>Nothing beyond the request</td></tr>
+  <tr><td>Walking tour</td><td>Wikipedia</td><td>Your approximate location, to find nearby places</td></tr>
+  <tr><td>Planes overhead</td><td>adsb.lol and adsbdb</td><td>Your approximate location, and the flight number being looked up</td></tr>
+  <tr><td>Live translate, on the iPhone</td><td>Apple</td><td>Speech may be sent to Apple for recognition, under Apple's privacy policy</td></tr>
+  <tr><td>Live translate, Soniox option</td><td>Soniox</td><td>Audio from the microphone while it is listening, using your own Soniox key</td></tr>
+  <tr><td>20 questions</td><td>Anthropic</td><td>The game's questions and your yes or no answers, using your own Anthropic key</td></tr>
+  <tr><td>Data feeds</td><td>The addresses you enter</td><td>The request, and the access token if you gave one</td></tr>
+  <tr><td>Notes from your PC</td><td>ntfy.sh and Apple's push service</td><td>Encrypted notes between your PC and phone, and the phone's push token so notes can arrive</td></tr>
+  <tr><td>Mail (off by default)</td><td>Google</td><td>A Gmail sign-in you set up yourself; messages are read on the phone only</td></tr>
+</table>
+
+<h2>Location</h2>
+<p>Location is used only by the walking tour and planes overhead. It is read while one of them is showing. If you turn on the walking tour's "Tell me when I pass something", location keeps being read while the display is on, including with the phone locked. It is sent only to the services in the table above, and is not stored.</p>
+
+<h2>Health-related data</h2>
+<p>If you add a data feed for a glucose reading or similar, that value is fetched from the address you entered and shown on your glasses. It is not stored beyond the latest reading and is not sent anywhere. Glasses Hub is not a medical device and should not be used for treatment decisions.</p>
+
+<h2>Children</h2>
+<p>Glasses Hub is not directed at children under 13 and does not knowingly collect information from anyone.</p>
+
+<h2>Deleting your data</h2>
+<p>Deleting the app removes everything it stored on your iPhone. There is nothing held by the developer to delete.</p>
+
+<h2>Changes</h2>
+<p>If this policy changes, the new version will be posted on this page with a new date.</p>
+
+<h2>Contact</h2>
+<p>Questions about privacy: open an issue at <a href="https://github.com/jarredksmith/glasses-hub/issues">github.com/jarredksmith/glasses-hub/issues</a>.</p>
+</main>
+</body>
+</html>
