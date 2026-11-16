@@ -212,6 +212,8 @@ public struct DrumPattern: Equatable, Identifiable {
     public var name: String
     public var bars: [[Set<Drum>]]
 
+    public init(name: String, bars: [[Set<Drum>]]) { self.name = name; self.bars = bars }
+
     public var steps: Int { bars.first?.count ?? 0 }
     public var usesToms: Bool { bars.contains { $0.contains { $0.contains(.tom) } } }
 
