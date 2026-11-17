@@ -878,3 +878,31 @@ final class StocksTests: XCTestCase {
         XCTAssertEqual(Stocks.card(["AAPL"], quotes: ["AAPL": down], note: "", page: 0, arrows: false, screen: screen).lines.last, "-1.80  -0.90%")
     }
 }
+
+final class CenteringTests: XCTestCase {
+    func testCentering() {
+        let b = "\u{3000}"
+        // 34 columns: about 31 units of room; a 2-unit line gets (31.3 - 2.4) / 2 / 2.17 = 6 blanks
+        let lines = TextLayout.centered(["Hi", "A much longer line of text here", ""], width: 34, each: true)
+        XCTAssertEqual(lines[0], String(repeating: b, count: 6) + "Hi")
+        XCTAssertEqual(lines[1], "A much longer line of text here")       // already fills the row
+        XCTAssertEqual(lines[2], "")
+        for line in lines { XCTAssertLessThanOrEqual(TextLayout.measure(line), 34 * 0.96) }
+        // as a block, every line moves by what the widest one allows
+        let block = TextLayout.centered(["Title", "one", "two three"], width: 34, each: false)
+        let lead = block[0].prefix { $0 == "\u{3000}" }.count
+        XCTAssertGreaterThan(lead, 2)
+        XCTAssertTrue(block.allSatisfy { $0.prefix { $0 == "\u{3000}" }.count == lead })
+        // a menu or a grid keeps its columns even when lines are centred one by one
+        let menu = TextLayout.centered(["Apps", "＞ Dashboard", b + " Info >", b + " Reading >"], width: 34, each: true)
+        let menuLead = menu[0].prefix { $0 == "\u{3000}" }.count
+        XCTAssertEqual(menu[1], String(repeating: b, count: menuLead) + "＞ Dashboard")
+        XCTAssertEqual(menu[2], String(repeating: b, count: menuLead) + b + " Info >")
+        let grid = DrumTrainer(pattern: DrumPattern.library[1]).card(listening: true, arrows: true, screen: Screen(size: .large)).lines
+        let moved = TextLayout.centered(grid, width: 34, each: true)
+        let gridLead = moved[1].count - grid[1].count
+        XCTAssertTrue(zip(moved, grid).dropFirst().allSatisfy { $0.count - $1.count == gridLead })
+        // a grid that already fills the row isn't pushed any further
+        for (after, before) in zip(moved, grid) { XCTAssertLessThanOrEqual(TextLayout.measure(after), max(TextLayout.measure(before), 34 * 0.96) + 0.01, after) }
+    }
+}

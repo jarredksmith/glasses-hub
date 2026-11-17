@@ -227,6 +227,8 @@ final class HubModel: ObservableObject {
     /// Trying the controls: the glasses show a checklist and each control ticks itself off.
     @Published private(set) var practicing = false
     @Published private(set) var practiced: [Bool] = [false, false, false, false]
+    /// Where text sits across the glasses' screen: 0 at the left, 1 the block in the middle, 2 every line in the middle.
+    @Published var centering: Int { didSet { defaults.set(centering, forKey: "centering") } }
     /// The apps pinned to the main screen, in the order they were pinned.
     @Published var favorites: [String] { didSet { defaults.set(favorites, forKey: "favorites") } }
     var favoriteApps: [Program] { favorites.compactMap { Program(rawValue: $0) }.filter { apps.contains($0) } }
@@ -510,6 +512,7 @@ final class HubModel: ObservableObject {
         // Anyone who already has the display set up doesn't need the first-run guide.
         menuHintsLeft = d.object(forKey: "menuHintsLeft") as? Int ?? 8
         blackjackBet = d.object(forKey: "blackjackBet") as? Int ?? 10
+        centering = d.integer(forKey: "centering")
         favorites = d.stringArray(forKey: "favorites") ?? ["dashboard", "scores", "news", "weather", "timer", "reader"]
         stockSymbols = d.stringArray(forKey: "stockSymbols") ?? Stocks.defaults
         dashStocks = d.bool(forKey: "dashStocks")
@@ -802,6 +805,9 @@ final class HubModel: ObservableObject {
                 if pageIndex != pager.index { pageIndex = pager.index }
                 if pageCount != pager.count { pageCount = pager.count }
             }
+        }
+        if centering > 0, !card.scrolls {
+            card.lines = TextLayout.centered(Array(card.lines.prefix(screen.rows)), width: screen.columns, each: centering == 2)
         }
         let text = card.text(rows: screen.rows)
         if text != preview { preview = text }

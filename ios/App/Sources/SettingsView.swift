@@ -44,9 +44,14 @@ struct SettingsView: View {
                     ForEach(TextSize.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 Stepper("\(columns.wrappedValue) characters per line", value: columns, in: 20...120)
+                Picker("Position", selection: $model.centering) {
+                    Text("Left").tag(0)
+                    Text("Centered block").tag(1)
+                    Text("Every line centered").tag(2)
+                }
                 Button("Show a test card for 30 seconds") { model.showTestCard() }
             } header: { Text("Size") } footer: {
-                Text("Text size applies the next time the display starts. If lines wrap early on the glasses, lower the characters per line; if there's room to spare, raise it. The test card has a ruler to check against.")
+                Text("Text size applies the next time the display starts. If lines wrap early on the glasses, lower the characters per line; if there's room to spare, raise it. The test card has a ruler to check against.\n\nCentering moves short screens to the middle. \"Centered block\" keeps the left edges lined up; \"Every line centered\" centres each line on its own, except in tables, grids and menus. It relies on the characters-per-line setting being right: if the top line starts disappearing, lower that number. Long reading text fills the row either way.")
             }
             Section {
                 Picker("Characters", selection: $model.glyphStyle) {

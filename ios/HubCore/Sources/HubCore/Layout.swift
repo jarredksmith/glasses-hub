@@ -96,6 +96,31 @@ public enum TextLayout {
             return 2.17
         }
     }
+    /// Moves lines toward the middle of the row by putting full-width blanks in front of them (ordinary
+    /// spaces at the start of a line can't be relied on). With `each`, every line is centred on its own;
+    /// otherwise the whole block moves together, keeping its left edge straight. Tables, grids and lists
+    /// always move as a block, so their columns stay lined up.
+    public static func centered(_ lines: [String], width: Int, each: Bool) -> [String] {
+        let blank: Character = "\u{3000}"
+        let room = Double(max(4, width)) * 0.92                 // a little spare: a line pushed past the edge would wrap
+        let step = unitWidth(blank)
+        func isBlank(_ line: String) -> Bool { line.allSatisfy { $0 == " " || $0 == blank } }
+        func pad(for wide: Double) -> Int { max(0, Int((room - wide) / 2 / step)) }
+        func isGridRow(_ line: String) -> Bool {
+            guard let first = line.unicodeScalars.first else { return false }
+            if first.value == 0x3000 { return true }
+            let marks = line.unicodeScalars.filter { (0xFF00...0xFFEF).contains($0.value) || (0x2500...0x259F).contains($0.value) }.count
+            return marks >= 3 && marks * 2 >= line.unicodeScalars.count
+        }
+        let table = lines.filter(isGridRow).count >= 2
+        if each && !table {
+            return lines.map { isBlank($0) ? $0 : String(repeating: blank, count: pad(for: measure($0))) + $0 }
+        }
+        let widest = lines.filter { !isBlank($0) }.map(measure).max() ?? 0
+        let lead = String(repeating: blank, count: pad(for: widest))
+        return lines.map { isBlank($0) ? $0 : lead + $0 }
+    }
+
     /// The width of a line, in average characters.
     public static func measure(_ text: String) -> Double { text.reduce(0) { $0 + unitWidth($1) } }
     /// How much of a row to fill: a little short of the full width, since the estimate isn't exact and a
