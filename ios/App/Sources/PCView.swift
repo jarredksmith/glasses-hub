@@ -7,12 +7,11 @@ struct PCView: View {
     @State private var pairing = false
 
     var body: some View {
-        NavigationStack {
-            Form {
-                if pc.paired { pairedSections } else { pairSection }
-            }
-            .navigationTitle("PC")
+        Form {
+            if pc.paired { pairedSections } else { pairSection }
         }
+        .navigationTitle("PC link")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     @ViewBuilder private var pairSection: some View {

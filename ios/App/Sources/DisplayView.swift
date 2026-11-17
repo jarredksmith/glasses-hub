@@ -6,6 +6,8 @@ struct DisplayView: View {
     @EnvironmentObject private var model: HubModel
     @EnvironmentObject private var link: GlassesLink
     @State private var flashText = ""
+    @State private var choosing = false
+    @State private var showNote = false
 
     var body: some View {
         NavigationStack {
@@ -19,16 +21,29 @@ struct DisplayView: View {
                     HStack {
                         Button { model.input(.previous) } label: { Label("Back", systemImage: "arrow.counterclockwise") }
                         Button { model.input(.next) } label: { Label("Turn", systemImage: "arrow.clockwise") }
-                        Button { model.input(.select) } label: { Label("Click", systemImage: "hand.tap") }
+                        Button { model.input(.select) } label: { Label("Select", systemImage: "hand.tap") }
                         Spacer()
-                        Text("Same as the crown").font(.footnote).foregroundStyle(.secondary)
                     }
                     .buttonStyle(.bordered)
-                    sendBox
+                    .labelStyle(.titleAndIcon)
                 }
                 .padding()
             }
             .navigationTitle("Glasses Hub")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showNote = true } label: { Image(systemName: "square.and.pencil") }.accessibilityLabel("Flash a note")
+                }
+            }
+            .sheet(isPresented: $choosing) { AppChooser() }
+            .sheet(isPresented: $showNote) {
+                NavigationStack {
+                    Form { sendBox }
+                        .navigationTitle("Flash a note").navigationBarTitleDisplayMode(.inline)
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { showNote = false } } }
+                }
+                .presentationDetents([.medium])
+            }
         }
     }
 
@@ -55,13 +70,9 @@ struct DisplayView: View {
             .buttonStyle(.borderedProminent)
             .tint(link.isRunning ? Color.red : Color.accentColor)
             .controlSize(.large)
-            Toggle("Pop up only when something comes in", isOn: $model.popUps)
+            Toggle("Pop up only when something comes in", isOn: $model.popUps).font(.subheadline)
             if model.popUps, !link.isRunning {
-                Text("Waiting. The display opens by itself for scores, a finished timer, PC notes and facts, then closes. Leave this app running in the background.")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
-            if !link.isRunning {
-                Text("Keep the RayNeo app connected to your glasses. To leave the display from the glasses, hold the crown.")
+                Text("Waiting. The display opens by itself for alerts, then closes. Leave this app running in the background.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
@@ -69,36 +80,48 @@ struct DisplayView: View {
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
     }
 
+    /// What's showing, the pinned apps a tap away, and the way to everything else.
     private var programPicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Showing").font(.headline)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
-                ForEach(model.apps) { program in
-                    Button { model.program = program } label: {
-                        VStack(spacing: 6) {
-                            Image(systemName: program.icon).font(.title3)
-                            Text(program.title).font(.caption).lineLimit(1).minimumScaleFactor(0.8)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 58)
+        VStack(alignment: .leading, spacing: 10) {
+            Button { choosing = true } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: model.program.icon).font(.title3).frame(width: 30)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Showing").font(.caption).foregroundStyle(.secondary)
+                        Text(model.program.title).font(.headline).foregroundStyle(Color.primary)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(model.program == program ? Color.accentColor : Color.secondary)
+                    Spacer()
+                    Text("All apps").font(.subheadline)
+                    Image(systemName: "chevron.right").font(.footnote)
+                }
+                .padding(12)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            let pinned = model.favoriteApps
+            if !pinned.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(pinned) { program in
+                            Button { model.program = program } label: {
+                                Label(program.title, systemImage: program.icon).font(.subheadline).lineLimit(1)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(model.program == program ? Color.accentColor : Color.secondary)
+                        }
+                    }
                 }
             }
         }
     }
 
-    private var sendBox: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Flash a note").font(.headline)
-            HStack {
-                TextField("Shows for a few seconds", text: $flashText, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(1...3)
-                Button("Send") {
-                    model.flash(flashText); flashText = ""
-                }
-                .buttonStyle(.bordered)
-                .disabled(flashText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    @ViewBuilder private var sendBox: some View {
+        Section {
+            TextField("Shows on the glasses for a few seconds", text: $flashText, axis: .vertical).lineLimit(2...5)
+            Button("Send") {
+                model.flash(flashText); flashText = ""; showNote = false
             }
+            .disabled(flashText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 }
@@ -228,6 +251,56 @@ struct PageControls: View {
                 Button("Start over") { model.pageRestart() }.font(.footnote)
             }
             .buttonStyle(.bordered)
+        }
+    }
+}
+
+/// Every app, grouped as on the glasses' menu, to pick what's showing.
+struct AppChooser: View {
+    @EnvironmentObject private var model: HubModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var search = ""
+
+    private func matches(_ program: Program) -> Bool {
+        let wanted = search.trimmingCharacters(in: .whitespaces)
+        return wanted.isEmpty || program.title.localizedCaseInsensitiveContains(wanted)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if matches(.dashboard) { Section { row(.dashboard) } }
+                ForEach(model.menuGroups) { group in
+                    let items = group.items.filter(matches)
+                    if !items.isEmpty { Section(group.title) { ForEach(items) { row($0) } } }
+                }
+            }
+            .searchable(text: $search, prompt: "Find an app")
+            .navigationTitle("Show on the glasses")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+        }
+    }
+
+    private func row(_ program: Program) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                model.program = program; dismiss()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: program.icon).frame(width: 28).foregroundStyle(Color.accentColor)
+                    Text(program.title).foregroundStyle(Color.primary)
+                    Spacer()
+                    if model.program == program { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Button { model.toggleFavorite(program) } label: {
+                Image(systemName: model.isFavorite(program) ? "pin.fill" : "pin").foregroundStyle(model.isFavorite(program) ? Color.orange : Color.secondary)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(model.isFavorite(program) ? "Unpin \(program.title)" : "Pin \(program.title)")
         }
     }
 }

@@ -845,3 +845,36 @@ final class MusicTests: XCTestCase {
         XCTAssertEqual(groove.map(learned.identify), [[.kick], [.hat], [.snare], [.hat]])
     }
 }
+
+final class StocksTests: XCTestCase {
+    func testSymbols() {
+        XCTAssertEqual(Stocks.symbol("dow"), "^DJI")
+        XCTAssertEqual(Stocks.symbol("S&P 500"), "^GSPC")
+        XCTAssertEqual(Stocks.symbol(" aapl "), "AAPL")
+        XCTAssertEqual(Stocks.symbol("brk.b"), "BRK.B")
+        XCTAssertNil(Stocks.symbol("what?"))
+        XCTAssertEqual(Stocks.symbols("dow, s&p 500, aapl tsla\nBTC-USD, aapl"), ["^DJI", "^GSPC", "AAPL", "TSLA", "BTC-USD"])
+        XCTAssertEqual(Stocks.url(symbol: "^GSPC")?.absoluteString, "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=1d&interval=1d")
+    }
+    func testQuotesAndCard() {
+        let body = Data(#"{"chart":{"result":[{"meta":{"currency":"USD","symbol":"^DJI","regularMarketPrice":44210.55,"chartPreviousClose":44025.81,"shortName":"Dow Jones Industrial Average"},"timestamp":[1]}],"error":null}}"#.utf8)
+        let dow = Stocks.parse(body)
+        XCTAssertEqual(dow?.price, 44210.55)
+        XCTAssertEqual(dow?.percent ?? 0, 0.4196, accuracy: 0.001)
+        XCTAssertNil(Stocks.parse(Data(#"{"chart":{"result":null,"error":{"code":"Not Found"}}}"#.utf8)))
+        XCTAssertEqual(Stocks.money(44210.55), "44,211")
+        XCTAssertEqual(Stocks.money(5923.4), "5,923.40")
+        XCTAssertEqual(Stocks.money(-12.5), "-12.50")
+        XCTAssertEqual(Stocks.money(1234567.0), "1,234,567")
+        XCTAssertEqual(Stocks.line("^DJI", quote: dow, arrows: true), "Dow 44,211 ↑0.42%")
+        XCTAssertEqual(Stocks.line("^DJI", quote: dow, arrows: false), "Dow 44,211 +0.42%")
+        let down = StockQuote(symbol: "AAPL", name: "Apple", price: 198.2, previous: 200, currency: "USD")
+        let screen = Screen(size: .large)
+        let card = Stocks.card(["^DJI", "AAPL", "TSLA"], quotes: ["^DJI": dow!, "AAPL": down], note: "", page: 0, arrows: true, screen: screen)
+        XCTAssertEqual(card.lines, ["Markets", "Dow 44,211 ↑0.42%", "AAPL 198.20 ↓0.90%", "TSLA ..."])
+        let many = Stocks.card((1...9).map { "S\($0)" }, quotes: ["S1": down], note: "", page: 1, arrows: true, screen: screen)
+        XCTAssertEqual(many.lines.first, "Markets  2/3")
+        XCTAssertEqual(many.lines.count, 5)
+        XCTAssertEqual(Stocks.card(["AAPL"], quotes: ["AAPL": down], note: "", page: 0, arrows: false, screen: screen).lines.last, "-1.80  -0.90%")
+    }
+}

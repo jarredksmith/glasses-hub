@@ -1,7 +1,7 @@
 import SwiftUI
 import HubCore
 
-/// Settings for the word game, blackjack and 20 questions.
+/// Settings for the word game and 20 questions.
 struct GameSettings: View {
     @EnvironmentObject private var model: HubModel
     let program: Program
@@ -14,14 +14,6 @@ struct GameSettings: View {
                 Button("Skip to a new word") { model.newWord() }
             } footer: {
                 Text("Guess the hidden word a letter at a time. On the glasses: turn the crown to choose a letter, look up to guess it. Six wrong letters and the word is lost. There's one daily word, the same for everyone, and as many extra words as you like after it.")
-            }
-        case .blackjack:
-            Section {
-                LabeledContent("Chips", value: "\(model.blackjack.chips)")
-                Stepper("Bet \(model.blackjackBet)", value: $model.blackjackBet, in: 5...50, step: 5)
-                Button("Start over with 100 chips") { model.resetChips() }
-            } footer: {
-                Text("On the glasses: look up to deal. Turn the crown forward to hit, back to double down on your first two cards, and look up to stand. The dealer draws to 17 and blackjack pays 3 to 2. Chips are just for score.")
             }
         case .twenty:
             Section {

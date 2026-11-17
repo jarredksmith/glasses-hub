@@ -8,7 +8,7 @@ enum Program: String, CaseIterable, Identifiable {
     case dashboard, scores, news, mail, agenda, weather, trivia, facts, timer, reader, message
     case speed, metronome, tuner, picker, live, translate, feeds
     case word, blackjack, twenty, planes, tour
-    case chords, drums
+    case chords, drums, stocks
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -23,6 +23,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .word: return "Word game"; case .blackjack: return "Blackjack"; case .twenty: return "20 questions"
         case .planes: return "Planes overhead"; case .tour: return "Walking tour"
         case .chords: return "Guitar chords"; case .drums: return "Drum trainer"
+        case .stocks: return "Stocks"
         }
     }
     var icon: String {
@@ -38,6 +39,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .word: return "textformat.abc"; case .blackjack: return "suit.spade"; case .twenty: return "questionmark.circle"
         case .planes: return "airplane"; case .tour: return "figure.walk"
         case .chords: return "guitars"; case .drums: return "music.quarternote.3"
+        case .stocks: return "chart.line.uptrend.xyaxis"
         }
     }
     var blurb: String {
@@ -67,6 +69,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .tour: return "What's around you, from Wikipedia, as you walk."
         case .chords: return "A chord chart that listens and moves on as you play."
         case .drums: return "Learn a groove a bar at a time; it hears your kit."
+        case .stocks: return "The Dow, the S&P 500 and any stocks you follow."
         }
     }
 }
@@ -203,12 +206,12 @@ final class HubModel: ObservableObject {
     /// The menu on the glasses: the dashboard, then groups of apps.
     struct MenuGroup: Identifiable { let title: String; let items: [Program]; var id: String { title } }
     var menuGroups: [MenuGroup] {
-        [MenuGroup(title: "Info", items: [.scores, .news, .mail, .agenda, .weather, .feeds].filter { $0 != .mail || showMail }),
+        [MenuGroup(title: "Info", items: [.scores, .news, .mail, .agenda, .weather, .stocks, .feeds].filter { $0 != .mail || showMail }),
          MenuGroup(title: "Reading", items: [.reader, .speed, .message, .live, .translate]),
          MenuGroup(title: "Music", items: [.chords, .drums, .metronome, .tuner]),
          MenuGroup(title: "Tools", items: [.timer, .picker]),
          MenuGroup(title: "Nearby", items: [.tour, .planes]),
-         MenuGroup(title: "Fun", items: [.word, .blackjack, .twenty, .trivia, .facts])]
+         MenuGroup(title: "Fun", items: [.word, .twenty, .trivia, .facts])]
     }
     @Published private(set) var menuGroup: Int?
     private var menuTitles: [String] {
@@ -224,6 +227,27 @@ final class HubModel: ObservableObject {
     /// Trying the controls: the glasses show a checklist and each control ticks itself off.
     @Published private(set) var practicing = false
     @Published private(set) var practiced: [Bool] = [false, false, false, false]
+    /// The apps pinned to the main screen, in the order they were pinned.
+    @Published var favorites: [String] { didSet { defaults.set(favorites, forKey: "favorites") } }
+    var favoriteApps: [Program] { favorites.compactMap { Program(rawValue: $0) }.filter { apps.contains($0) } }
+    func isFavorite(_ program: Program) -> Bool { favorites.contains(program.rawValue) }
+    func toggleFavorite(_ program: Program) {
+        if let at = favorites.firstIndex(of: program.rawValue) { favorites.remove(at: at) } else { favorites.append(program.rawValue) }
+    }
+
+    // Stocks
+    @Published var stockSymbols: [String] { didSet { defaults.set(stockSymbols, forKey: "stockSymbols"); stocksDue = .distantPast } }
+    @Published var dashStocks: Bool { didSet { defaults.set(dashStocks, forKey: "dashStocks"); stocksDue = .distantPast } }
+    @Published private(set) var stockQuotes: [String: StockQuote] = [:]
+    @Published private(set) var stockNote = ""
+    private var stocksDue = Date.distantPast, stockPage = 0
+    /// Adds what was typed ("aapl, tsla" or "dow"). Returns the symbols it couldn't make sense of.
+    func addStocks(_ typed: String) -> Bool {
+        let found = Stocks.symbols(typed)
+        for symbol in found where !stockSymbols.contains(symbol) { stockSymbols.append(symbol) }
+        return !found.isEmpty
+    }
+
     // Music trainers
     private let ear = MusicEar()
     @Published var chordSong: String { didSet { defaults.set(chordSong, forKey: "chordSong"); loadChords() } }
@@ -486,6 +510,9 @@ final class HubModel: ObservableObject {
         // Anyone who already has the display set up doesn't need the first-run guide.
         menuHintsLeft = d.object(forKey: "menuHintsLeft") as? Int ?? 8
         blackjackBet = d.object(forKey: "blackjackBet") as? Int ?? 10
+        favorites = d.stringArray(forKey: "favorites") ?? ["dashboard", "scores", "news", "weather", "timer", "reader"]
+        stockSymbols = d.stringArray(forKey: "stockSymbols") ?? Stocks.defaults
+        dashStocks = d.bool(forKey: "dashStocks")
         chordSong = d.string(forKey: "chordSong") ?? "grace"
         chordShow = d.object(forKey: "chordShow") as? Int ?? 1
         chordText = d.string(forKey: "chordText") ?? "[G]Put each chord in brackets [C]where it changes\n[D]One line of the song per [G]line"
@@ -540,6 +567,7 @@ final class HubModel: ObservableObject {
         link.translationMode = translationMode
         if let saved = defaults.data(forKey: "drumKit").flatMap({ try? JSONDecoder().decode(DrumKit.self, from: $0) }) { drumKit = saved }
         loadChords(); loadDrums()
+        if !apps.contains(program) { program = .dashboard }          // an app that's no longer offered
         ear.onChroma = { [weak self] chroma, level in self?.heard(chroma: chroma, level: level) }
         ear.onHit = { [weak self] hit in self?.heard(hit: hit) }
         // saved games (these have defaults, so they load once everything else is set up)
@@ -684,7 +712,7 @@ final class HubModel: ObservableObject {
         if program == .agenda || program == .dashboard { agendaDue = .distantPast }
         pager = AutoPager(); pagesPaused = false
         listEnd = false; agendaStep = 0; weatherStep = nil; mailOpen = false
-        tourOpen = false; planeIndex = 0; planesDue = .distantPast
+        tourOpen = false; planeIndex = 0; planesDue = .distantPast; stockPage = 0; stocksDue = .distantPast
         if program == .word { wordCheckDay() }
         if program == .mail { mailDue = .distantPast }
     }
@@ -862,6 +890,8 @@ final class HubModel: ObservableObject {
             if !next { toggleTranslate() }
         case .feeds:
             if !next { openMenu() } else { refreshFeeds() }
+        case .stocks:
+            if !next { openMenu() } else { stockPage += 1 }
         case .tour:
             if tourOpen {
                 if !next { tourOpen = false } else if morePages { pageStep(1) } else { tourOpen = false; stepPlace(1) }
@@ -1416,6 +1446,8 @@ final class HubModel: ObservableObject {
             if earlierPage { pageStep(-1) } else if agendaStep > 0 { agendaStep -= 1; pageRestart() }
         case .weather:
             weatherStep = max(0, (weatherStep ?? 0) + 2)             // three views: two forward is one back
+        case .stocks:
+            stockPage -= 1
         case .tour:
             if tourOpen { if earlierPage { pageStep(-1) } } else { stepPlace(-1) }
         case .facts, .reader:
@@ -1547,6 +1579,9 @@ final class HubModel: ObservableObject {
                 let left = timer.remaining(now: now)
                 lines.append(rich ? glyphs.meter(left / max(1, timer.duration), cells: 6) + " " + HubTimer.clock(left) : "Timer \(HubTimer.clock(left))")
             }
+            if dashStocks {
+                for symbol in stockSymbols.prefix(2) { if let quote = stockQuotes[symbol] { add(glyphs.bullet, Stocks.line(symbol, quote: quote, arrows: rich)) } }
+            }
             for feed in feeds where feed.onDashboard {
                 if let reading = feedReadings[feed.id] { add(glyphs.bullet, FeedParser.line(feed, reading: reading, now: now, arrows: rich)) }
             }
@@ -1619,6 +1654,8 @@ final class HubModel: ObservableObject {
             return live.card(screen: screen, page: livePage)
         case .translate:
             return translateCard(screen: screen)
+        case .stocks:
+            return Stocks.card(stockSymbols, quotes: stockQuotes, note: stockNote, page: stockPage, arrows: rich, screen: screen)
         case .chords:
             if !musicNote.isEmpty, !chordOn { return Card(["Guitar chords"] + TextLayout.wrap(musicNote, width: screen.columns)) }
             return follower.card(title: chordTitle, listening: chordOn, style: ChordFollower.Style(rawValue: chordShow) ?? .frets, screen: screen)
@@ -1687,8 +1724,29 @@ final class HubModel: ObservableObject {
         }
     }
 
+    private func refreshStocks(now: Date) {
+        let wanted = program == .stocks || (program == .dashboard && dashStocks)
+        guard wanted, !stockSymbols.isEmpty, now >= stocksDue, fetching.insert("stocks").inserted else { return }
+        stocksDue = now.addingTimeInterval(program == .stocks ? 60 : 300)
+        let symbols = program == .stocks ? stockSymbols : Array(stockSymbols.prefix(2))
+        Task {
+            var problem = ""
+            for symbol in symbols {
+                guard let url = Stocks.url(symbol: symbol) else { continue }
+                // the service only answers requests that look like they come from a browser
+                let answer = await FeedFetch.get(url, headers: ["User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"])
+                if let data = answer.data, let quote = Stocks.parse(data) { self.stockQuotes[symbol] = quote }
+                else if answer.data != nil || answer.problem?.contains("Not found") == true { problem = "No price found for \(symbol)." }
+                else { problem = "Couldn't reach the price service." }
+            }
+            self.stockNote = problem
+            self.fetching.remove("stocks")
+        }
+    }
+
     private func refreshData(now: Date) {
         refreshFeedData(now: now)
+        refreshStocks(now: now)
         refreshNearby(now: now)
         let wantsScores = !leagues.isEmpty && (program == .scores || (program == .dashboard && dashScores) || (scoreAlerts && (link.isRunning || popUps)))
         if wantsScores, now >= scoresDue, fetching.insert("scores").inserted {

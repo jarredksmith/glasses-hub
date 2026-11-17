@@ -17,6 +17,7 @@ struct SettingsView: View {
                     NavigationLink { controlsPage } label: { Label("Glasses controls", systemImage: "dial.medium") }
                     NavigationLink { phonePage } label: { Label("iPhone buttons and Shortcuts", systemImage: "iphone") }
                     NavigationLink { behaviourPage } label: { Label("Pages and alerts", systemImage: "bell") }
+                    NavigationLink { PCView() } label: { Label("PC link", systemImage: "desktopcomputer") }
                 }
                 Section {
                     NavigationLink { PracticeView() } label: { Label("Try the controls", systemImage: "checklist") }

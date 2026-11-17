@@ -53,7 +53,6 @@ struct RootView: View {
         TabView(selection: $tab) {
             DisplayView().tabItem { Label("Display", systemImage: "eyeglasses") }.tag(0)
             AppsView().tabItem { Label("Apps", systemImage: "square.grid.2x2") }.tag(1)
-            PCView().tabItem { Label("PC", systemImage: "desktopcomputer") }.tag(2)
             SettingsView().tabItem { Label("Settings", systemImage: "gearshape") }.tag(3)
         }
         .sheet(isPresented: Binding(get: { !model.setupSeen }, set: { if !$0 { model.setupSeen = true } })) { SetupView() }

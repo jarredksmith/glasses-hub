@@ -4,15 +4,24 @@ import HubCore
 /// Every app, with its settings.
 struct AppsView: View {
     @EnvironmentObject private var model: HubModel
+    @State private var search = ""
+
+    private func matches(_ program: Program) -> Bool {
+        let wanted = search.trimmingCharacters(in: .whitespaces)
+        return wanted.isEmpty || program.title.localizedCaseInsensitiveContains(wanted) || program.blurb.localizedCaseInsensitiveContains(wanted)
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                Section { row(.dashboard) }
+                if matches(.dashboard) { Section { row(.dashboard) } }
                 ForEach(model.menuGroups) { group in
-                    Section(group.title) { ForEach(group.items) { row($0) } }
+                    let items = group.items.filter(matches)
+                    if !items.isEmpty { Section(group.title) { ForEach(items) { row($0) } } }
                 }
             }
+            .listStyle(.insetGrouped)
+            .searchable(text: $search, prompt: "Find an app")
             .navigationTitle("Apps")
         }
     }
@@ -25,15 +34,20 @@ extension AppsView {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: program.icon).frame(width: 28).foregroundStyle(Color.accentColor)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(program.title)
-                    Text(program.blurb).font(.footnote).foregroundStyle(.secondary)
+                    Text(program.blurb).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
-                if model.program == program {
-                    Spacer()
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
-                }
+                Spacer(minLength: 4)
+                if model.isFavorite(program) { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary) }
+                if model.program == program { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green) }
             }
+        }
+        .swipeActions(edge: .leading) {
+            Button(model.isFavorite(program) ? "Unpin" : "Pin") { model.toggleFavorite(program) }.tint(.orange)
+        }
+        .swipeActions(edge: .trailing) {
+            Button("Show") { model.program = program }.tint(.green)
         }
     }
 }
@@ -47,6 +61,7 @@ struct ProgramSettings: View {
             Section {
                 Button(model.program == program ? "Showing now" : "Show this on the glasses") { model.program = program }
                     .disabled(model.program == program)
+                Toggle("Pin to the main screen", isOn: Binding(get: { model.isFavorite(program) }, set: { _ in model.toggleFavorite(program) }))
             } footer: { Text(program.blurb) }
             switch program {
             case .dashboard: dashboard; dashboardSleep
@@ -67,6 +82,7 @@ struct ProgramSettings: View {
             case .word, .blackjack, .twenty: GameSettings(program: program)
             case .planes, .tour: NearbySettings(program: program)
             case .chords, .drums: MusicSettings(program: program)
+            case .stocks: StockSettings()
             }
         }
         .navigationTitle(program.title)

@@ -56,8 +56,7 @@ jobs:
           shot 1-setup    -setupSeen NO  -startTab 0
           shot 2-display  -setupSeen YES -startTab 0
           shot 3-apps     -setupSeen YES -startTab 1
-          shot 4-pc       -setupSeen YES -startTab 2
-          shot 5-settings -setupSeen YES -startTab 3
+          shot 4-settings -setupSeen YES -startTab 3
           ls -la shots
 
       - uses: actions/upload-artifact@v4
