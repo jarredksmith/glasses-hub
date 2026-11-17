@@ -710,8 +710,41 @@ final class MusicTests: XCTestCase {
         XCTAssertTrue(follower.finished)
         XCTAssertEqual(play([Float](repeating: 0, count: 8192)), 0)
         let card = ChordFollower(steps: ChordChart.parse(ChordChart.songs[0].chart)).card(title: "x", listening: true, screen: Screen(size: .large))
-        XCTAssertTrue(card.lines[0].hasSuffix("then C"))
+        XCTAssertEqual(card.lines[0], "Ｇ\u{3000}３２０００３")
+        XCTAssertEqual(card.lines[1], "then C x32010")
         XCTAssertLessThanOrEqual(card.lines.count, 5)
+        let grace = ChordFollower(steps: ChordChart.parse(ChordChart.songs[0].chart))
+        XCTAssertTrue(grace.card(title: "x", listening: true, style: .name, screen: Screen(size: .large)).lines[0].hasSuffix("then C"))
+        let tab = grace.card(title: "x", listening: true, style: .tab, screen: Screen(size: .small)).lines
+        XCTAssertEqual(tab.count, 7)
+        XCTAssertEqual(tab[1], "ｅ｜３－－０")
+        XCTAssertEqual(tab[5], "Ａ｜２－－３")
+        XCTAssertEqual(tab[6], "Ｅ｜３－－ｘ")
+        XCTAssertLessThanOrEqual(grace.card(title: "x", listening: true, style: .tab, screen: Screen(size: .large)).lines.count, 5)   // no room: falls back
+    }
+    func testChordShapes() {
+        XCTAssertEqual(ChordChart.shape(of: "G"), [3, 2, 0, 0, 0, 3])
+        XCTAssertEqual(ChordChart.shape(of: "C/G"), [-1, 3, 2, 0, 1, 0])
+        XCTAssertEqual(ChordChart.shape(of: "Amin"), [-1, 0, 2, 2, 1, 0])
+        XCTAssertEqual(ChordChart.shape(of: "G#"), [4, 6, 6, 5, 4, 4])            // E shape at the fourth fret
+        XCTAssertEqual(ChordChart.shape(of: "C#"), [-1, 4, 6, 6, 6, 4])           // A shape: the E shape would sit at the ninth
+        XCTAssertEqual(ChordChart.shape(of: "Bbm"), [6, 8, 8, 6, 6, 6])
+        XCTAssertNil(ChordChart.shape(of: "Cdim7"))
+        XCTAssertEqual(ChordChart.frets("x(10)(12)(12)(11)(10)"), [-1, 10, 12, 12, 11, 10])
+        XCTAssertNil(ChordChart.frets("3200"))
+        let own = ChordChart.parse("[G:3x0003]Amazing [Cdim7:x3424x]grace [D]now")
+        XCTAssertEqual(own.map(\.chord), ["G", "Cdim7", "D"])
+        XCTAssertEqual(own[0].frets, [3, -1, 0, 0, 0, 3])
+        XCTAssertEqual(own[1].frets, [-1, 3, 4, 2, 4, -1])
+        XCTAssertEqual(own[2].frets, [-1, -1, 0, 2, 3, 2])
+        // every shape plays only notes that belong to its chord
+        let open = [4, 9, 2, 7, 11, 4]
+        for name in ["C", "D", "E", "F", "G", "A", "B", "Am", "Dm", "Em", "Bm", "A7", "B7", "D7", "E7", "G7", "Cmaj7", "Fmaj7", "F#m", "Bb", "Eb", "G#", "C#", "Bbm", "F#7", "Cm7"] {
+            guard let frets = ChordChart.shape(of: name), let notes = ChordChart.notes(of: name) else { XCTFail(name); continue }
+            let played = Set(frets.enumerated().compactMap { $0.element < 0 ? nil : (open[$0.offset] + $0.element) % 12 })
+            XCTAssertTrue(played.isSubset(of: notes), "\(name) \(frets)")
+            XCTAssertTrue(played.contains(notes.first { $0 == played.first } ?? -1))
+        }
     }
     func testDrumPatterns() {
         XCTAssertEqual(DrumPattern.library.count, 8)

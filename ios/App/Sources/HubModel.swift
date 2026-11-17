@@ -228,6 +228,8 @@ final class HubModel: ObservableObject {
     private let ear = MusicEar()
     @Published var chordSong: String { didSet { defaults.set(chordSong, forKey: "chordSong"); loadChords() } }
     @Published var chordText: String { didSet { defaults.set(chordText, forKey: "chordText"); if chordSong == "custom" { loadChords() } } }
+    /// How the chord is drawn: 0 its name only, 1 with its six frets, 2 as six tab lines.
+    @Published var chordShow: Int { didSet { defaults.set(chordShow, forKey: "chordShow") } }
     @Published private(set) var chordOn = false
     private var follower = ChordFollower(steps: [])
     var chordCount: Int { follower.steps.count }
@@ -485,6 +487,7 @@ final class HubModel: ObservableObject {
         menuHintsLeft = d.object(forKey: "menuHintsLeft") as? Int ?? 8
         blackjackBet = d.object(forKey: "blackjackBet") as? Int ?? 10
         chordSong = d.string(forKey: "chordSong") ?? "grace"
+        chordShow = d.object(forKey: "chordShow") as? Int ?? 1
         chordText = d.string(forKey: "chordText") ?? "[G]Put each chord in brackets [C]where it changes\n[D]One line of the song per [G]line"
         drumPattern = d.string(forKey: "drumPattern") ?? "Basic rock"
         drumText = d.string(forKey: "drumText") ?? "HH x-x-x-x-x-x-x-x-\nSD ----o-------o---\nBD o-------o-------"
@@ -1618,7 +1621,7 @@ final class HubModel: ObservableObject {
             return translateCard(screen: screen)
         case .chords:
             if !musicNote.isEmpty, !chordOn { return Card(["Guitar chords"] + TextLayout.wrap(musicNote, width: screen.columns)) }
-            return follower.card(title: chordTitle, listening: chordOn, screen: screen)
+            return follower.card(title: chordTitle, listening: chordOn, style: ChordFollower.Style(rawValue: chordShow) ?? .frets, screen: screen)
         case .drums:
             return trainer.card(listening: drumOn, note: drumCalibration ?? "", arrows: rich, screen: screen)
         case .word:

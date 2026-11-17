@@ -14,18 +14,26 @@ struct MusicSettings: View {
                     ForEach(ChordChart.songs) { Text($0.title).tag($0.id) }
                     Text("My own chart").tag("custom")
                 }
+                Picker("Show each chord as", selection: $model.chordShow) {
+                    Text("Name only").tag(0)
+                    Text("Frets on one line").tag(1)
+                    Text("Six tab lines").tag(2)
+                }
+                if model.chordShow == 2, model.screen.rows < 7 {
+                    Text("Tab lines need the small text size (7 lines). With large text you'll get the frets on one line.").font(.footnote).foregroundStyle(.secondary)
+                }
                 Button(model.chordOn ? "Stop listening" : "Start listening") { model.toggleChords() }
                 Button("Back to the first chord") { model.restartChords() }
                 if !model.musicNote.isEmpty { Text(model.musicNote).foregroundStyle(.secondary) }
             } footer: {
-                Text("The glasses show the chord to play, the one after it, and the words. While listening, the phone moves on when it hears the next chord. On the glasses: look up to start or stop listening, turn the crown to step forward or back by hand.\n\nIt works best with clear, ringing chords and the phone within a few feet. Fast changes and near-identical chords may need a turn of the crown. Nothing is recorded.")
+                Text("The glasses show the chord to play, the one after it, and the words. While listening, the phone moves on when it hears the next chord. On the glasses: look up to start or stop listening, turn the crown to step forward or back by hand.\n\nFrets read from the low E string to the high e, so G is 320003 and x means don't play that string. Tab lines show the same thing the way tab is written, high string on top, with the next chord's frets beside the current one.\n\nIt works best with clear, ringing chords and the phone within a few feet. Fast changes and near-identical chords may need a turn of the crown. Nothing is recorded.")
             }
             if model.chordSong == "custom" {
                 Section {
                     TextEditor(text: $model.chordText).frame(minHeight: 180).font(.system(.body, design: .monospaced))
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                 } header: { Text("My chart") } footer: {
-                    Text("Put each chord in square brackets where it changes: [G]Amazing [C]grace. A line of chord names above a line of words works too. \(model.chordCount) chord changes found.")
+                    Text("Put each chord in square brackets where it changes: [G]Amazing [C]grace. A line of chord names above a line of words works too. To set your own fingering, add it after a colon: [G:3x0003]. \(model.chordCount) chord changes found.")
                 }
             }
         case .drums:

@@ -5,6 +5,11 @@ import Foundation
 public struct ChordStep: Equatable {
     public var chord: String
     public var lyric: String
+    /// A fingering written into the chart for this chord ("[G:320003]"), instead of the usual one.
+    public var shape: [Int]?
+    public init(chord: String, lyric: String, shape: [Int]? = nil) { self.chord = chord; self.lyric = lyric; self.shape = shape }
+    /// Frets from the low E string to the high e; -1 is a string that isn't played. Nil when no fingering is known.
+    public var frets: [Int]? { shape ?? ChordChart.shape(of: chord) }
 }
 
 public enum ChordChart {
@@ -27,15 +32,64 @@ public enum ChordChart {
         return Set(shape.map { (($0 + root) % 12 + 12) % 12 })
     }
 
+    /// Reads a fingering like "320003" or "x32010" (low E string first). Frets above 9 go in brackets: "x(10)(12)(12)(11)(10)".
+    public static func frets(_ text: String) -> [Int]? {
+        var out = [Int](), rest = Substring(text.trimmingCharacters(in: .whitespaces))
+        while let ch = rest.first {
+            rest = rest.dropFirst()
+            if ch == "x" || ch == "X" { out.append(-1) }
+            else if let digit = ch.wholeNumberValue { out.append(digit) }
+            else if ch == "(", let close = rest.firstIndex(of: ")"), let fret = Int(rest[..<close]), (0...24).contains(fret) {
+                out.append(fret); rest = rest[rest.index(after: close)...]
+            } else if ch == " " || ch == "-" { continue }
+            else { return nil }
+        }
+        return out.count == 6 ? out : nil
+    }
+
+    private static let shapes: [String: String] = [
+        "C": "x32010", "D": "xx0232", "E": "022100", "F": "133211", "G": "320003", "A": "x02220", "B": "x24442",
+        "Am": "x02210", "Dm": "xx0231", "Em": "022000", "Fm": "133111", "Gm": "355333", "Bm": "x24432", "Cm": "x35543",
+        "A7": "x02020", "B7": "x21202", "C7": "x32310", "D7": "xx0212", "E7": "020100", "G7": "320001", "F7": "131211",
+        "Am7": "x02010", "Dm7": "xx0211", "Em7": "022030", "Bm7": "x24232",
+        "Cmaj7": "x32000", "Dmaj7": "xx0222", "Emaj7": "021100", "Fmaj7": "xx3210", "Gmaj7": "320002", "Amaj7": "x02120",
+        "Asus2": "x02200", "Asus4": "x02230", "Dsus2": "xx0230", "Dsus4": "xx0233", "Esus4": "022200", "Gsus4": "320013",
+        "Cadd9": "x32030", "Gadd9": "320203", "E5": "022xxx", "A5": "x022xx", "D5": "xx023x", "G5": "355xxx",
+        "F#m": "244222", "C#m": "x46654", "G#m": "466444", "F#": "244322", "Bb": "x13331", "Eb": "x68886", "Ab": "466544",
+    ]
+
+    /// The usual way to finger a chord, or a barre shape worked out from its root. Nil for chords it has no shape for.
+    public static func shape(of chord: String) -> [Int]? {
+        var name = chord.trimmingCharacters(in: .whitespaces)
+        if let slash = name.firstIndex(of: "/") { name = String(name[..<slash]) }
+        for (long, short) in [("min7", "m7"), ("min", "m"), ("M7", "maj7")] where name.hasSuffix(long) { name = String(name.dropLast(long.count)) + short }
+        if name.hasSuffix("maj"), !name.hasSuffix("maj7") { name = String(name.dropLast(3)) }
+        if let known = shapes[name] { return frets(known) }
+        // a barre chord: the E shape moved up the neck, or the A shape when that would sit too high
+        guard let letter = name.first, let base = ["C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11][letter] else { return nil }
+        var rest = name.dropFirst(), root = base
+        if rest.first == "#" { root += 1; rest = rest.dropFirst() } else if rest.first == "b" { root -= 1; rest = rest.dropFirst() }
+        let fromE = ((root - 4) % 12 + 12) % 12, fromA = ((root - 9) % 12 + 12) % 12
+        let eShapes: [String: [Int]] = ["": [0, 2, 2, 1, 0, 0], "m": [0, 2, 2, 0, 0, 0], "7": [0, 2, 0, 1, 0, 0], "m7": [0, 2, 0, 0, 0, 0]]
+        let aShapes: [String: [Int]] = ["": [-1, 0, 2, 2, 2, 0], "m": [-1, 0, 2, 2, 1, 0], "7": [-1, 0, 2, 0, 2, 0], "m7": [-1, 0, 2, 0, 1, 0]]
+        guard let e = eShapes[String(rest)], let a = aShapes[String(rest)] else { return nil }
+        if fromE >= 1, fromE <= 7 || fromA == 0 { return e.map { $0 + fromE } }
+        return a.map { $0 < 0 ? -1 : $0 + fromA }
+    }
+
     /// Reads a chart into the chord changes in order, each with the words sung over it. Takes chords in
     /// square brackets inside the words ("[G]Amazing [C]grace") or a line of chords above a line of words.
     public static func parse(_ text: String) -> [ChordStep] {
         var steps = [ChordStep]()
-        func add(_ chord: String, _ lyric: String) {
+        func add(_ written: String, _ lyric: String) {
+            // "G:320003" names the chord and gives its fingering
+            let parts = written.split(separator: ":", maxSplits: 1).map(String.init)
+            let chord = parts.first ?? written
+            let shape = parts.count > 1 ? frets(parts[1]) : nil
             let words = lyric.trimmingCharacters(in: .whitespaces)
             if let last = steps.indices.last, steps[last].chord == chord {
                 if !words.isEmpty { steps[last].lyric += (steps[last].lyric.isEmpty ? "" : " / ") + words }
-            } else { steps.append(ChordStep(chord: chord, lyric: words)) }
+            } else { steps.append(ChordStep(chord: chord, lyric: words, shape: shape)) }
         }
         func carry(_ lyric: String) {
             let words = lyric.trimmingCharacters(in: .whitespaces)
@@ -55,7 +109,8 @@ public enum ChordChart {
                     let chord = String(rest[rest.index(after: open)..<close]).trimmingCharacters(in: .whitespaces)
                     rest = rest[rest.index(after: close)...]
                     let end = rest.firstIndex(of: "[") ?? rest.endIndex
-                    if notes(of: chord) != nil { add(chord, String(rest[..<end])) } else { carry(String(rest[..<end])) }
+                    let name = chord.split(separator: ":").first.map(String.init) ?? chord
+                    if notes(of: name) != nil { add(chord, String(rest[..<end])) } else { carry(String(rest[..<end])) }
                     rest = rest[end...]
                 }
                 continue
@@ -185,14 +240,46 @@ public struct ChordFollower: Equatable {
         return true
     }
 
-    public func card(title: String, listening: Bool, screen: Screen) -> Card {
+    /// How much of the fingering to show: the name only, the six frets on a line, or six tab lines.
+    public enum Style: Int, CaseIterable, Sendable { case name, frets, tab }
+
+    static func fretText(_ frets: [Int]) -> String {
+        frets.map { $0 < 0 ? "x" : ($0 > 9 ? "(\($0))" : String($0)) }.joined()
+    }
+    /// One fret as a double-width cell, so tab lines stay in step.
+    static func cell(_ fret: Int?) -> String {
+        guard let fret else { return "\u{3000}" }
+        if fret < 0 { return "ｘ" }
+        return fret > 9 ? String(fret) : TextLayout.wide(String(fret))
+    }
+
+    public func card(title: String, listening: Bool, style: Style = .frets, screen: Screen) -> Card {
         guard !steps.isEmpty else { return Card(["Chords", "No chords found.", "Add a chart in the app."]) }
         let step = steps[min(index, steps.count - 1)]
-        let next = steps.indices.contains(index + 1) ? steps[index + 1].chord : "end"
+        let after = steps.indices.contains(index + 1) ? steps[index + 1] : nil
+        let next = after?.chord ?? "end"
+        let status = "\(index + 1)/\(steps.count)  " + (listening ? "listening" : "Look up: listen")
+        if style == .tab, screen.rows >= 7, let now = step.frets {
+            // six lines, high string on top as tab is written: this chord, then the next one
+            let then = after?.frets
+            var lines = [TextLayout.fit(step.chord + "  then " + next + "   " + status, width: screen.columns)]
+            let names = ["e", "B", "G", "D", "A", "E"]
+            for row in 0..<6 {
+                let string = 5 - row
+                var line = TextLayout.wide(names[row]) + "｜" + ChordFollower.cell(now[string])
+                if let then { line += "－－" + ChordFollower.cell(then[string]) }
+                lines.append(line)
+            }
+            return Card(lines)
+        }
         var lines = [TextLayout.wide(step.chord) + "\u{3000}" + "then " + next]
-        let room = max(0, screen.rows - 2)
+        if style != .name, let now = step.frets {
+            lines[0] = TextLayout.wide(step.chord) + "\u{3000}" + TextLayout.wide(ChordFollower.fretText(now))
+            lines.append(TextLayout.fit("then " + next + (after?.frets.map { "  " + ChordFollower.fretText($0) } ?? ""), width: screen.columns))
+        }
+        let room = max(0, screen.rows - lines.count - 1)
         if !step.lyric.isEmpty, room > 0 { lines += TextLayout.wrap(step.lyric, width: screen.columns, maxLines: room) }
-        lines.append(TextLayout.fit("\(index + 1)/\(steps.count)  " + (listening ? "listening" : "Look up: listen"), width: screen.columns))
+        lines.append(TextLayout.fit(status, width: screen.columns))
         return Card(lines)
     }
 }
