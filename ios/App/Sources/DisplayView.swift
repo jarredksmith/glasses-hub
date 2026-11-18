@@ -8,6 +8,7 @@ struct DisplayView: View {
     @State private var flashText = ""
     @State private var choosing = false
     @State private var showNote = false
+    @State private var showPad = false
 
     var body: some View {
         NavigationStack {
@@ -32,10 +33,14 @@ struct DisplayView: View {
             .navigationTitle("Glasses Hub")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button { showPad = true } label: { Image(systemName: "av.remote") }.accessibilityLabel("Remote pad for a ring or clicker")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { showNote = true } label: { Image(systemName: "square.and.pencil") }.accessibilityLabel("Flash a note")
                 }
             }
             .sheet(isPresented: $choosing) { AppChooser() }
+            .fullScreenCover(isPresented: $showPad) { RemotePadView() }
             .sheet(isPresented: $showNote) {
                 NavigationStack {
                     Form { sendBox }

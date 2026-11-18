@@ -104,6 +104,14 @@ struct SettingsView: View {
                 Text("They work with the display on, with the phone locked, from the phone or a Bluetooth ring that sends them, and your volume is put back after each press. With a double press set, a single press takes a moment longer (under half a second) while the app waits to see whether a second press follows.")
             }
             Section {
+                ForEach(RemoteEvent.allCases) { event in
+                    ActionPicker(title: event.title, selection: Binding(get: { model.ringAction(event) }, set: { model.ringMap[event.rawValue] = $0 }))
+                }
+                if !model.ringLast.isEmpty { LabeledContent("Last received", value: model.ringLast) }
+            } header: { Text("Bluetooth ring or clicker") } footer: {
+                Text("Scrolling rings and page-turner clickers work by faking swipes, taps and pinches on the phone's screen, so Glasses Hub can only see them while it's open. Tap the remote icon at the top of the Display tab for a dark full-screen pad, leave it open, and each button on the ring becomes a step on the glasses. Press each button there once to see what it sends, then set what it should do here.\n\nA ring's camera button is different: it presses the volume button, which works with the phone locked. That's set under Volume buttons.")
+            }
+            Section {
                 Text("Add a Glasses Hub action (Next, Previous, Select, Apps menu, Start or stop the display, Show text) in the Shortcuts app. Then assign that shortcut under Settings > Action Button, or Accessibility > Touch > Back Tap, or ask Siri for it.")
                     .font(.footnote)
             } header: { Text("Action button, Back Tap and Siri") }

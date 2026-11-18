@@ -227,6 +227,21 @@ final class HubModel: ObservableObject {
     /// Trying the controls: the glasses show a checklist and each control ticks itself off.
     @Published private(set) var practicing = false
     @Published private(set) var practiced: [Bool] = [false, false, false, false]
+    /// What each thing a ring or clicker can send does, by RemoteEvent name. Missing ones use the usual meaning.
+    @Published var ringMap: [String: Int] { didSet { defaults.set(ringMap, forKey: "ringMap") } }
+    @Published private(set) var ringLast = ""
+    func ringAction(_ event: RemoteEvent) -> Int { ringMap[event.rawValue] ?? event.usual }
+    /// Something arrived from a ring, clicker or keyboard while the remote pad was open.
+    func ring(_ event: RemoteEvent) {
+        let action = ringAction(event)
+        let names = [0: "next", 1: "select", 2: "apps menu", 3: "previous", 4: "nothing"]
+        ringLast = event.title + " → " + (names[action] ?? "")
+        link.record("Ring: \(event.title).")
+        if link.isStandingBy { wakeDashboard(); return }
+        guard link.isShowing else { return }
+        gesture(action)
+    }
+
     /// Where text sits across the glasses' screen: 0 at the left, 1 the block in the middle, 2 every line in the middle.
     @Published var centering: Int { didSet { defaults.set(centering, forKey: "centering") } }
     /// The apps pinned to the main screen, in the order they were pinned.
@@ -513,6 +528,7 @@ final class HubModel: ObservableObject {
         menuHintsLeft = d.object(forKey: "menuHintsLeft") as? Int ?? 8
         blackjackBet = d.object(forKey: "blackjackBet") as? Int ?? 10
         centering = d.integer(forKey: "centering")
+        ringMap = (d.dictionary(forKey: "ringMap") as? [String: Int]) ?? [:]
         favorites = d.stringArray(forKey: "favorites") ?? ["dashboard", "scores", "news", "weather", "timer", "reader"]
         stockSymbols = d.stringArray(forKey: "stockSymbols") ?? Stocks.defaults
         dashStocks = d.bool(forKey: "dashStocks")
