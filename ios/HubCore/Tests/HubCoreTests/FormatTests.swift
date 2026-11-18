@@ -906,3 +906,23 @@ final class CenteringTests: XCTestCase {
         for (after, before) in zip(moved, grid) { XCTAssertLessThanOrEqual(TextLayout.measure(after), max(TextLayout.measure(before), 34 * 0.96) + 0.01, after) }
     }
 }
+
+final class ReaderClockTests: XCTestCase {
+    func testLine() {
+        let utc = TimeZone(identifier: "UTC")!
+        let start = Date(timeIntervalSince1970: 1_800_000_000)          // 08:00:00 UTC
+        let now = start.addingTimeInterval(195)
+        XCTAssertEqual(ReaderClock.span(195), "3:15")
+        XCTAssertEqual(ReaderClock.span(3729), "1:02:09")
+        XCTAssertEqual(ReaderClock.line(mode: .off, now: now, started: start, targetMinutes: 10, page: 2, pages: 9, zone: utc), "")
+        XCTAssertEqual(ReaderClock.line(mode: .clock, now: now, started: start, targetMinutes: 10, page: 2, pages: 9, zone: utc), "8:03 AM  2/9")
+        XCTAssertEqual(ReaderClock.line(mode: .elapsed, now: now, started: start, targetMinutes: 10, page: 1, pages: 1, zone: utc), "3:15")
+        XCTAssertEqual(ReaderClock.line(mode: .both, now: now, started: start, targetMinutes: 10, page: 2, pages: 9, zone: utc), "8:03 AM  3:15  2/9")
+        XCTAssertEqual(ReaderClock.line(mode: .countdown, now: now, started: start, targetMinutes: 10, page: 2, pages: 9, zone: utc), "6:45 left  2/9")
+        XCTAssertEqual(ReaderClock.line(mode: .countdown, now: start.addingTimeInterval(630), started: start, targetMinutes: 10, page: 9, pages: 9, zone: utc), "+0:30 over  9/9")
+        let right = TextLayout.rightAligned("3:15  2/9", width: 34)
+        XCTAssertTrue(right.hasSuffix("3:15  2/9") && right.hasPrefix("\u{3000}"))
+        XCTAssertLessThanOrEqual(TextLayout.measure(right), 34 * 0.96)
+        XCTAssertGreaterThan(TextLayout.measure(right), 34 * 0.8)
+    }
+}

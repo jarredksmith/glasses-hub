@@ -227,6 +227,13 @@ final class HubModel: ObservableObject {
     /// Trying the controls: the glasses show a checklist and each control ticks itself off.
     @Published private(set) var practicing = false
     @Published private(set) var practiced: [Bool] = [false, false, false, false]
+    /// The Reader's timekeeping line, for using it as a teleprompter (a ReaderClock.Mode).
+    @Published var readerClock: Int { didSet { defaults.set(readerClock, forKey: "readerClock"); pager = AutoPager() } }
+    @Published var readerClockTop: Bool { didSet { defaults.set(readerClockTop, forKey: "readerClockTop") } }
+    @Published var readerTargetMinutes: Int { didSet { defaults.set(readerTargetMinutes, forKey: "readerTargetMinutes") } }
+    @Published private(set) var readerStarted = Date()
+    func restartReaderTimer() { readerStarted = Date() }
+
     /// What each thing a ring or clicker can send does, by RemoteEvent name. Missing ones use the usual meaning.
     @Published var ringMap: [String: Int] { didSet { defaults.set(ringMap, forKey: "ringMap") } }
     @Published private(set) var ringLast = ""
@@ -528,6 +535,9 @@ final class HubModel: ObservableObject {
         menuHintsLeft = d.object(forKey: "menuHintsLeft") as? Int ?? 8
         blackjackBet = d.object(forKey: "blackjackBet") as? Int ?? 10
         centering = d.integer(forKey: "centering")
+        readerClock = d.integer(forKey: "readerClock")
+        readerClockTop = d.object(forKey: "readerClockTop") as? Bool ?? true
+        readerTargetMinutes = d.object(forKey: "readerTargetMinutes") as? Int ?? 10
         ringMap = (d.dictionary(forKey: "ringMap") as? [String: Int]) ?? [:]
         favorites = d.stringArray(forKey: "favorites") ?? ["dashboard", "scores", "news", "weather", "timer", "reader"]
         stockSymbols = d.stringArray(forKey: "stockSymbols") ?? Stocks.defaults
@@ -733,6 +743,7 @@ final class HubModel: ObservableObject {
         listEnd = false; agendaStep = 0; weatherStep = nil; mailOpen = false
         tourOpen = false; planeIndex = 0; planesDue = .distantPast; stockPage = 0; stocksDue = .distantPast
         if program == .word { wordCheckDay() }
+        if program == .reader { restartReaderTimer() }
         if program == .mail { mailDue = .distantPast }
     }
 
@@ -785,6 +796,7 @@ final class HubModel: ObservableObject {
         }
 
         var card: Card
+        var statusLine: String?
         if popupOpen, !link.isShowing { card = currentCard(now: now) }        // still opening; the alert's clock hasn't started
         else if let alert = overlays.current(now: now.timeIntervalSinceReferenceDate) { card = alert; unshown.removeAll() }
         else if popupOpen {
@@ -817,13 +829,26 @@ final class HubModel: ObservableObject {
                 if pageCount != max(1, sections.count) { pageCount = max(1, sections.count) }
             } else {
                 pager.paused = pagesPaused
-                card = pager.page(of: card, rows: screen.rows, now: now.timeIntervalSinceReferenceDate, seconds: pageSeconds, loops: !readingText)
+                // the Reader's clock takes a row of its own, so the text pages one row shorter
+                let timed = program == .reader && readingText && card.scrolls && screen.rows >= 3
+                    ? ReaderClock.Mode(rawValue: readerClock) ?? .off : .off
+                card = pager.page(of: card, rows: timed == .off ? screen.rows : screen.rows - 1, now: now.timeIntervalSinceReferenceDate, seconds: pageSeconds, loops: !readingText)
                 if pageIndex != pager.index { pageIndex = pager.index }
                 if pageCount != pager.count { pageCount = pager.count }
+                if timed != .off {
+                    statusLine = TextLayout.rightAligned(ReaderClock.line(mode: timed, now: now, started: readerStarted, targetMinutes: readerTargetMinutes,
+                                                                          page: pager.index + 1, pages: pager.count), width: screen.columns)
+                }
             }
         }
         if centering > 0, !card.scrolls {
-            card.lines = TextLayout.centered(Array(card.lines.prefix(screen.rows)), width: screen.columns, each: centering == 2)
+            card.lines = TextLayout.centered(Array(card.lines.prefix(screen.rows - (statusLine == nil ? 0 : 1))), width: screen.columns, each: centering == 2)
+        }
+        if let statusLine {
+            var body = Array(card.lines.prefix(screen.rows - 1))
+            // keep the clock in its corner: short last pages are padded so it doesn't ride up
+            if !readerClockTop { while body.count < screen.rows - 1 { body.append("\u{3000}") } }
+            card.lines = readerClockTop ? [statusLine] + body : body + [statusLine]
         }
         let text = card.text(rows: screen.rows)
         if text != preview { preview = text }
@@ -1472,7 +1497,9 @@ final class HubModel: ObservableObject {
             stockPage -= 1
         case .tour:
             if tourOpen { if earlierPage { pageStep(-1) } } else { stepPlace(-1) }
-        case .facts, .reader:
+        case .reader:
+            if earlierPage { pageStep(-1) } else { restartReaderTimer() }       // back on the first page: zero the timer
+        case .facts:
             if earlierPage { pageStep(-1) }
         case .live:
             if livePage > 0 { livePage -= 1 }
@@ -1547,7 +1574,10 @@ final class HubModel: ObservableObject {
     func closeMenu() { menuOpen = false; menuGroup = nil; listEnd = false }
 
     func pageStep(_ by: Int) { sectionIndex += by; pager.step(by, now: Date().timeIntervalSinceReferenceDate) }
-    func pageRestart() { sectionIndex = 0; pager.restart(now: Date().timeIntervalSinceReferenceDate); pagesPaused = false }
+    func pageRestart() {
+        sectionIndex = 0; pager.restart(now: Date().timeIntervalSinceReferenceDate); pagesPaused = false
+        if program == .reader { restartReaderTimer() }
+    }
     func togglePagesPaused() { pagesPaused.toggle() }
 
     private var glyphs: Glyphs { Glyphs(glyphStyle) }

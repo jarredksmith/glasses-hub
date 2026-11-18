@@ -121,6 +121,13 @@ public enum TextLayout {
         return lines.map { isBlank($0) ? $0 : lead + $0 }
     }
 
+    /// Pushes a short line to the right-hand edge with full-width blanks in front of it.
+    public static func rightAligned(_ line: String, width: Int) -> String {
+        let room = Double(max(4, width)) * 0.92
+        let blanks = max(0, Int((room - measure(line)) / unitWidth("\u{3000}")))
+        return String(repeating: "\u{3000}", count: blanks) + line
+    }
+
     /// The width of a line, in average characters.
     public static func measure(_ text: String) -> Double { text.reduce(0) { $0 + unitWidth($1) } }
     /// How much of a row to fill: a little short of the full width, since the estimate isn't exact and a
@@ -219,6 +226,35 @@ public enum TextLayout {
         return (0..<count).map { page in
             Array(lines[(page * body)..<min(lines.count, (page + 1) * body)]) + ["(\(page + 1)/\(count))"]
         }
+    }
+}
+
+/// The line of timekeeping a speaker sees while reading from the glasses.
+public enum ReaderClock {
+    /// What the line shows: nothing, the time of day, time since starting, both, or time left of a target.
+    public enum Mode: Int, CaseIterable, Sendable { case off, clock, elapsed, both, countdown }
+
+    /// Minutes and seconds, with hours once there are any: "3:05", "1:02:09".
+    public static func span(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded(.down)))
+        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+    }
+
+    public static func line(mode: Mode, now: Date, started: Date, targetMinutes: Int, page: Int, pages: Int, zone: TimeZone = .current) -> String {
+        let elapsed = now.timeIntervalSince(started)
+        var parts = [String]()
+        switch mode {
+        case .off: return ""
+        case .clock: parts.append(HubClock.time(now, zone: zone))
+        case .elapsed: parts.append(span(elapsed))
+        case .both: parts.append(HubClock.time(now, zone: zone)); parts.append(span(elapsed))
+        case .countdown:
+            let left = Double(max(1, targetMinutes) * 60) - elapsed
+            parts.append(left >= 0 ? span(left) + " left" : "+" + span(-left) + " over")
+        }
+        if pages > 1 { parts.append("\(page)/\(pages)") }
+        return parts.joined(separator: "  ")
     }
 }
 

@@ -357,6 +357,25 @@ struct ProgramSettings: View {
         } header: { Text("Text to read") } footer: {
             Text("Long text is shown a screen at a time and turns by itself. Set the speed under Settings; pause or step pages from the Display tab.")
         }
+        Section {
+            Picker("Show", selection: $model.readerClock) {
+                Text("Nothing").tag(0)
+                Text("Clock").tag(1)
+                Text("Timer").tag(2)
+                Text("Clock and timer").tag(3)
+                Text("Countdown").tag(4)
+            }
+            if model.readerClock != 0 {
+                if model.readerClock == 4 { Stepper("Talk length: \(model.readerTargetMinutes) min", value: $model.readerTargetMinutes, in: 1...180) }
+                Picker("Where", selection: $model.readerClockTop) {
+                    Text("Top right").tag(true)
+                    Text("Bottom right").tag(false)
+                }
+                if model.readerClock != 1 { Button("Restart the timer now") { model.restartReaderTimer() } }
+            }
+        } header: { Text("Clock and timer") } footer: {
+            Text("For using the Reader as a teleprompter. A line in the corner shows the time, how long you've been going, or how long is left of your talk, with the page number. The countdown turns to \"over\" when you pass your time. It takes one row, so each page holds one line less.\n\nThe timer starts when you open the Reader or go back to the start. On the glasses, turning the crown back on the first page sets it to zero, so you can start it as you begin speaking.")
+        }
     }
 
     @ViewBuilder private var liveTranslate: some View {
