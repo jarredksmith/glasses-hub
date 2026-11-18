@@ -920,6 +920,8 @@ final class ReaderClockTests: XCTestCase {
         XCTAssertEqual(ReaderClock.line(mode: .both, now: now, started: start, targetMinutes: 10, page: 2, pages: 9, zone: utc), "8:03 AM  3:15  2/9")
         XCTAssertEqual(ReaderClock.line(mode: .countdown, now: now, started: start, targetMinutes: 10, page: 2, pages: 9, zone: utc), "6:45 left  2/9")
         XCTAssertEqual(ReaderClock.line(mode: .countdown, now: start.addingTimeInterval(630), started: start, targetMinutes: 10, page: 9, pages: 9, zone: utc), "+0:30 over  9/9")
+        XCTAssertEqual(ReaderClock.line(mode: .clockCountdown, now: now, started: start, targetMinutes: 10, page: 2, pages: 9, zone: utc), "8:03 AM  6:45 left  2/9")
+        XCTAssertTrue(ReaderClock.Mode.clockCountdown.usesTimer && !ReaderClock.Mode.clock.usesTimer)
         let right = TextLayout.rightAligned("3:15  2/9", width: 34)
         XCTAssertTrue(right.hasSuffix("3:15  2/9") && right.hasPrefix("\u{3000}"))
         XCTAssertLessThanOrEqual(TextLayout.measure(right), 34 * 0.96)

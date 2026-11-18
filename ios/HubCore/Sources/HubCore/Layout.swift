@@ -232,7 +232,9 @@ public enum TextLayout {
 /// The line of timekeeping a speaker sees while reading from the glasses.
 public enum ReaderClock {
     /// What the line shows: nothing, the time of day, time since starting, both, or time left of a target.
-    public enum Mode: Int, CaseIterable, Sendable { case off, clock, elapsed, both, countdown }
+    public enum Mode: Int, CaseIterable, Sendable { case off, clock, elapsed, both, countdown, clockCountdown }
+        public var usesTimer: Bool { self != .off && self != .clock }
+        public var countsDown: Bool { self == .countdown || self == .clockCountdown }
 
     /// Minutes and seconds, with hours once there are any: "3:05", "1:02:09".
     public static func span(_ seconds: TimeInterval) -> String {
@@ -249,7 +251,8 @@ public enum ReaderClock {
         case .clock: parts.append(HubClock.time(now, zone: zone))
         case .elapsed: parts.append(span(elapsed))
         case .both: parts.append(HubClock.time(now, zone: zone)); parts.append(span(elapsed))
-        case .countdown:
+        case .countdown, .clockCountdown:
+            if mode == .clockCountdown { parts.append(HubClock.time(now, zone: zone)) }
             let left = Double(max(1, targetMinutes) * 60) - elapsed
             parts.append(left >= 0 ? span(left) + " left" : "+" + span(-left) + " over")
         }

@@ -364,9 +364,10 @@ struct ProgramSettings: View {
                 Text("Timer").tag(2)
                 Text("Clock and timer").tag(3)
                 Text("Countdown").tag(4)
+                Text("Clock and countdown").tag(5)
             }
             if model.readerClock != 0 {
-                if model.readerClock == 4 { Stepper("Talk length: \(model.readerTargetMinutes) min", value: $model.readerTargetMinutes, in: 1...180) }
+                if model.readerClock >= 4 { Stepper("Talk length: \(model.readerTargetMinutes) min", value: $model.readerTargetMinutes, in: 1...180) }
                 Picker("Where", selection: $model.readerClockTop) {
                     Text("Top right").tag(true)
                     Text("Bottom right").tag(false)

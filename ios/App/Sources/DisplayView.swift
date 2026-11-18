@@ -170,6 +170,19 @@ struct ProgramControls: View {
             case .trivia: trivia
             case .timer: timer
             case .reader:
+                if (ReaderClock.Mode(rawValue: model.readerClock) ?? .off).usesTimer {
+                    // refreshed every second so the time shown here matches the glasses
+                    TimelineView(.periodic(from: .now, by: 1)) { moment in
+                        HStack {
+                            Button { model.restartReaderTimer() } label: { Label("Reset timer", systemImage: "arrow.counterclockwise.circle") }
+                                .buttonStyle(.borderedProminent)
+                            Spacer()
+                            Text(ReaderClock.line(mode: (ReaderClock.Mode(rawValue: model.readerClock) ?? .elapsed).countsDown ? .countdown : .elapsed,
+                                                  now: moment.date, started: model.readerStarted, targetMinutes: model.readerTargetMinutes, page: 1, pages: 1))
+                                .font(.title3.monospacedDigit())
+                        }
+                    }
+                }
                 TeleprompterButton(title: "Reader", text: model.readerText).buttonStyle(.bordered)
                 Text("Edit the text under Apps > Reader.").font(.footnote).foregroundStyle(.secondary)
             case .news: news
