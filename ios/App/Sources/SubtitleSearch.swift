@@ -72,16 +72,25 @@ enum SubtitleSearch {
     static func titles(_ query: String, key: String) async throws -> [Title] {
         guard let request = request("features", ["query": query], key: key) else { return [] }
         let body = try await send(request)
-        var out = [Title]()
+        var known = [Title](), obscure = [Title]()
         for item in body["data"] as? [[String: Any]] ?? [] {
             let fields = item["attributes"] as? [String: Any] ?? [:]
-            guard let id = number(fields["feature_id"]) ?? number(item["id"]), let title = fields["title"] as? String, !title.isEmpty else { continue }
-            let kind = (fields["feature_type"] as? String ?? "").lowercased()
+            guard let id = number(fields["feature_id"]) ?? number(item["id"]) else { continue }
+            // a plain search says what each result is in "feature_type"; a search for shows only says it outside
+            let kind = ((fields["feature_type"] as? String) ?? (item["type"] as? String) ?? "").lowercased()
             guard kind != "episode" else { continue }
+            let original = (fields["original_title"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            let title = original.isEmpty ? (fields["title"] as? String ?? "").capitalized : original
+            guard !title.isEmpty else { continue }
             let year = (fields["year"] as? String) ?? number(fields["year"]).map(String.init) ?? ""
-            out.append(Title(id: id, title: title, year: year, isSeries: kind == "tvshow"))
+            let series = kind == "tvshow"
+            let found = Title(id: id, title: title, year: year, isSeries: series)
+            // the ones people actually watch first: shows with seasons, films with plenty of subtitles
+            let popular = series ? (number(fields["seasons_count"]) ?? (fields["seasons"] as? [Any])?.count ?? 0) > 0 && !original.isEmpty
+                                 : (number(fields["subtitles_count"]) ?? 0) >= 20
+            if popular { known.append(found) } else { obscure.append(found) }
         }
-        return out
+        return known + obscure
     }
 
     /// The subtitle files there are for a movie, or one episode of a show, most downloaded first.
