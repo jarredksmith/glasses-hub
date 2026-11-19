@@ -8,6 +8,9 @@
 	<!-- bluetooth-central: keep talking to the glasses from the background.
 	     audio: lets the silent keep-awake loop run while the phone is locked. -->
 	<!-- The developer team that signed the app. The PC needs it to address Apple push. -->
+	<!-- The key for looking up subtitle files, put in by the build when there is one. -->
+	<key>SubtitleKey</key>
+	<string>$(SUBTITLE_KEY)</string>
 	<key>HubTeamID</key>
 	<string>$(DEVELOPMENT_TEAM)</string>
 	<!-- Show this app's folder in the Files app, so saved text can be imported into the RayNeo teleprompter. -->

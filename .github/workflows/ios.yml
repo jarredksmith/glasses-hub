@@ -78,6 +78,7 @@ jobs:
           xcodebuild -project "$PROJECT" -scheme GlassesHub -configuration Release \
             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/GlassesHub.xcarchive" \
             DEVELOPMENT_TEAM="$TEAM" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            SUBTITLE_KEY="${{ secrets.SUBTITLE_KEY }}" \
             CODE_SIGNING_ALLOWED=NO archive > "$RUNNER_TEMP/build.log" 2>&1
           STATUS=$?
           grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" "$RUNNER_TEMP/build.log" | sort -u | tail -n 80

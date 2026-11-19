@@ -8,7 +8,7 @@ enum Program: String, CaseIterable, Identifiable {
     case dashboard, scores, news, mail, agenda, weather, trivia, facts, timer, reader, message
     case speed, metronome, tuner, picker, live, translate, feeds
     case word, blackjack, twenty, planes, tour
-    case chords, drums, stocks
+    case chords, drums, stocks, movie
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -24,6 +24,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .planes: return "Planes overhead"; case .tour: return "Walking tour"
         case .chords: return "Guitar chords"; case .drums: return "Drum trainer"
         case .stocks: return "Stocks"
+        case .movie: return "Movie captions"
         }
     }
     var icon: String {
@@ -40,6 +41,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .planes: return "airplane"; case .tour: return "figure.walk"
         case .chords: return "guitars"; case .drums: return "music.quarternote.3"
         case .stocks: return "chart.line.uptrend.xyaxis"
+        case .movie: return "film"
         }
     }
     var blurb: String {
@@ -70,6 +72,7 @@ enum Program: String, CaseIterable, Identifiable {
         case .chords: return "A chord chart that listens and moves on as you play."
         case .drums: return "Learn a groove a bar at a time; it hears your kit."
         case .stocks: return "The Dow, the S&P 500 and any stocks you follow."
+        case .movie: return "A film's real subtitles, kept in step by listening to the dialogue."
         }
     }
 }
@@ -207,7 +210,7 @@ final class HubModel: ObservableObject {
     struct MenuGroup: Identifiable { let title: String; let items: [Program]; var id: String { title } }
     var menuGroups: [MenuGroup] {
         [MenuGroup(title: "Info", items: [.scores, .news, .mail, .agenda, .weather, .stocks, .feeds].filter { $0 != .mail || showMail }),
-         MenuGroup(title: "Reading", items: [.reader, .speed, .message, .live, .translate]),
+         MenuGroup(title: "Reading", items: [.reader, .speed, .message, .movie, .live, .translate]),
          MenuGroup(title: "Music", items: [.chords, .drums, .metronome, .tuner]),
          MenuGroup(title: "Tools", items: [.timer, .picker]),
          MenuGroup(title: "Nearby", items: [.tour, .planes]),
@@ -233,6 +236,23 @@ final class HubModel: ObservableObject {
     @Published var readerTargetMinutes: Int { didSet { defaults.set(readerTargetMinutes, forKey: "readerTargetMinutes") } }
     @Published private(set) var readerStarted = Date()
     func restartReaderTimer() { readerStarted = Date() }
+
+    // MARK: Movie captions
+    struct MovieEntry: Codable, Identifiable, Equatable { var id: String; var title: String; var detail: String }
+    @Published var movieLibrary: [MovieEntry] { didSet { defaults.set(try? JSONEncoder().encode(movieLibrary), forKey: "movieLibrary") } }
+    @Published var movieCurrent: String { didSet { defaults.set(movieCurrent, forKey: "movieCurrent"); loadMovie() } }
+    /// The language of the subtitles to look for, and the language the film is spoken in.
+    @Published var movieLanguage: String { didSet { defaults.set(movieLanguage, forKey: "movieLanguage") } }
+    @Published var movieAudio: String { didSet { defaults.set(movieAudio, forKey: "movieAudio"); if movieOn { stopMovie() } } }
+    @Published var movieHolds: Bool { didSet { defaults.set(movieHolds, forKey: "movieHolds"); movie.holdsWhenQuiet = movieHolds } }
+    @Published var subtitleKey: String { didSet { Secrets.set("opensubtitles", subtitleKey.trimmingCharacters(in: .whitespacesAndNewlines)) } }
+    @Published private(set) var movieOn = false
+    @Published private(set) var movieNote = ""
+    @Published private(set) var movie = MovieTracker(cues: [])
+    var movieTitle: String { movieLibrary.first { $0.id == movieCurrent }?.title ?? "" }
+    var movieKey: String { let own = subtitleKey.trimmingCharacters(in: .whitespacesAndNewlines); return own.isEmpty ? SubtitleSearch.builtInKey : own }
+    /// Whether the dialogue can be followed by ear: only when the captions are in the language being spoken.
+    var movieCanListen: Bool { movieLanguage == movieAudio }
 
     /// What each thing a ring or clicker can send does, by RemoteEvent name. Missing ones use the usual meaning.
     @Published var ringMap: [String: Int] { didSet { defaults.set(ringMap, forKey: "ringMap") } }
@@ -564,6 +584,12 @@ final class HubModel: ObservableObject {
         ringMap = (d.dictionary(forKey: "ringMap") as? [String: Int]) ?? [:]
         favorites = d.stringArray(forKey: "favorites") ?? ["dashboard", "scores", "news", "weather", "timer", "reader"]
         stockSymbols = d.stringArray(forKey: "stockSymbols") ?? Stocks.defaults
+        movieLibrary = d.data(forKey: "movieLibrary").flatMap { try? JSONDecoder().decode([MovieEntry].self, from: $0) } ?? []
+        movieCurrent = d.string(forKey: "movieCurrent") ?? ""
+        movieLanguage = d.string(forKey: "movieLanguage") ?? "en"
+        movieAudio = d.string(forKey: "movieAudio") ?? "en"
+        movieHolds = d.object(forKey: "movieHolds") as? Bool ?? true
+        subtitleKey = Secrets.get("opensubtitles")
         dashStocks = d.bool(forKey: "dashStocks")
         chordSong = d.string(forKey: "chordSong") ?? "grace"
         chordShow = d.object(forKey: "chordShow") as? Int ?? 1
@@ -618,7 +644,7 @@ final class HubModel: ObservableObject {
         mailSignedIn = google.signedIn
         link.translationMode = translationMode
         if let saved = defaults.data(forKey: "drumKit").flatMap({ try? JSONDecoder().decode(DrumKit.self, from: $0) }) { drumKit = saved }
-        loadChords(); loadDrums()
+        loadChords(); loadDrums(); loadMovie()
         if !apps.contains(program) { program = .dashboard }          // an app that's no longer offered
         ear.onChroma = { [weak self] chroma, level in self?.heard(chroma: chroma, level: level) }
         ear.onHit = { [weak self] hit in self?.heard(hit: hit) }
@@ -784,7 +810,8 @@ final class HubModel: ObservableObject {
 
         // Speed read moves on by the clock, and is the one app that sends screens faster than once a second.
         listener.tick()
-        if (program == .live || program == .translate || program == .chords || program == .drums), !menuOpen { link.pace = 0.3 }       // captions should keep up with speech
+        if movie.state == .running { let was = movie.state; movie.tick(now: now.timeIntervalSinceReferenceDate); if movie.state != was { link.record("Movie captions: the room went quiet, holding.") } }
+        if (program == .live || program == .translate || program == .chords || program == .drums || program == .movie), !menuOpen { link.pace = 0.3 }       // captions should keep up with speech
         else if program == .metronome, metroOn, metroVisual, !menuOpen { link.pace = max(0.25, 60.0 / Double(max(1, metroBPM)) * 0.6) }
         else { link.pace = program == .speed && speedPlaying && !menuOpen ? SpeedRead.interval(wpm: speedWPM, chunk: speedSize) : 1.0 }
         if program == .speed, speedPlaying, !menuOpen {
@@ -968,7 +995,7 @@ final class HubModel: ObservableObject {
             } else if next { stepPlace(1) }
             else if places.indices.contains(placeIndex), !places[placeIndex].summary.isEmpty { tourOpen = true; pageRestart() }
             else { tourDue = .distantPast }
-        case .word, .blackjack, .twenty, .planes, .chords, .drums:
+        case .word, .blackjack, .twenty, .planes, .chords, .drums, .movie:
             break                                   // handled in toolInput
         }
     }
@@ -1008,6 +1035,14 @@ final class HubModel: ObservableObject {
             case .previous: speedIndex = max(0, speedIndex - 12)
             }
             speedAnchor()
+        case .movie:
+            let at = Date().timeIntervalSinceReferenceDate
+            switch what {
+            case .next: movie.shift(0.5, now: at)
+            case .previous: movie.shift(-0.5, now: at)
+            case .select:
+                if !movieOn, movieCanListen, movie.state == .waiting, !movie.isEmpty { toggleMovie() } else { movie.toggleHold(now: at) }
+            }
         case .chords:
             switch what {
             case .next: follower.step(1)
@@ -1267,6 +1302,61 @@ final class HubModel: ObservableObject {
         }
     }
 
+    // MARK: Movie captions
+
+    private func loadMovie() {
+        let cues = movieCurrent.isEmpty ? [] : SubtitleFile.parse(SubtitleShelf.read(movieCurrent + ".srt") ?? "")
+        var fresh = MovieTracker(cues: cues)
+        fresh.holdsWhenQuiet = movieHolds
+        movie = fresh
+    }
+
+    /// Keeps a subtitle file and makes it the one showing. False when it isn't a subtitle file.
+    func addMovie(title: String, detail: String, text: String) -> Bool {
+        guard !SubtitleFile.parse(text).isEmpty else { return false }
+        let id = UUID().uuidString
+        guard SubtitleShelf.save(text, as: id + ".srt") else { return false }
+        movieLibrary.insert(MovieEntry(id: id, title: title, detail: detail), at: 0)
+        for old in movieLibrary.dropFirst(30) { SubtitleShelf.remove(old.id + ".srt") }      // the shelf holds thirty
+        movieLibrary = Array(movieLibrary.prefix(30))
+        movieCurrent = id
+        return true
+    }
+
+    func removeMovies(at offsets: IndexSet) {
+        for index in offsets where movieLibrary.indices.contains(index) {
+            let entry = movieLibrary[index]
+            SubtitleShelf.remove(entry.id + ".srt")
+            if entry.id == movieCurrent { if movieOn { stopMovie() }; movieCurrent = "" }
+        }
+        movieLibrary.remove(atOffsets: offsets)
+    }
+
+    /// Back to waiting for the first line, as when a film is started over.
+    func restartMovie() { movie.reset() }
+    func nudgeMovie(_ seconds: Double) { movie.shift(seconds, now: Date().timeIntervalSinceReferenceDate) }
+    func holdMovie() { movie.toggleHold(now: Date().timeIntervalSinceReferenceDate) }
+
+    func toggleMovie() {
+        if movieOn { stopMovie(); return }
+        guard !movie.isEmpty else { movieNote = "Pick a movie or show first."; return }
+        guard movieCanListen else { movieNote = ""; return }
+        if translateOn { stopTranslate() }
+        movieNote = "Starting…"
+        Task {
+            if let problem = await listener.start(locale: SubtitleSearch.speech(movieAudio)) { self.movieNote = problem; return }
+            self.movieOn = true
+            self.movieNote = ""
+        }
+    }
+
+    func stopMovie() {
+        guard movieOn else { return }
+        listener.stop()
+        movieOn = false
+        keepAwake.resume()
+    }
+
     // MARK: Live translate
 
     func toggleTranslate() {
@@ -1325,6 +1415,10 @@ final class HubModel: ObservableObject {
     }
 
     private func heardPartial(_ text: String) {
+        if movieOn {
+            if movie.hear(text, at: Date().timeIntervalSinceReferenceDate), program == .movie, link.isRunning { tick() }
+            return
+        }
         guard translateOn else { return }
         heardNow = text
         // translate the phrase as it grows, but not on every word
@@ -1492,6 +1586,7 @@ final class HubModel: ObservableObject {
         if tunerOn { sound.stopListening(); tunerOn = false; tunerReading = nil }
         if (chordOn && program != .chords) || (drumOn && program != .drums) { ear.stop(); chordOn = false; drumOn = false; drumCalibration = nil }
         if translateOn, program != .translate { stopTranslate() }
+        if movieOn, program != .movie { stopMovie() }
         speedPlaying = false
     }
 
@@ -1526,7 +1621,7 @@ final class HubModel: ObservableObject {
             if earlierPage { pageStep(-1) }
         case .live:
             if livePage > 0 { livePage -= 1 }
-        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .translate, .feeds, .word, .blackjack, .twenty, .planes, .chords, .drums:
+        case .trivia, .timer, .dashboard, .message, .speed, .metronome, .tuner, .picker, .translate, .feeds, .word, .blackjack, .twenty, .planes, .chords, .drums, .movie:
             break
         }
     }
@@ -1735,6 +1830,9 @@ final class HubModel: ObservableObject {
             return translateCard(screen: screen)
         case .stocks:
             return Stocks.card(stockSymbols, quotes: stockQuotes, note: stockNote, page: stockPage, arrows: rich, screen: screen)
+        case .movie:
+            let note = movieNote.isEmpty && !movieCanListen ? "Select to start at the first line. Turn the crown to move the captions earlier or later." : movieNote
+            return movie.card(title: movieTitle, listening: movieOn, note: note, now: now.timeIntervalSinceReferenceDate, screen: screen)
         case .chords:
             if !musicNote.isEmpty, !chordOn { return Card(["Guitar chords"] + TextLayout.wrap(musicNote, width: screen.columns)) }
             return follower.card(title: chordTitle, listening: chordOn, style: ChordFollower.Style(rawValue: chordShow) ?? .frets, screen: screen)

@@ -83,6 +83,7 @@ struct ProgramSettings: View {
             case .planes, .tour: NearbySettings(program: program)
             case .chords, .drums: MusicSettings(program: program)
             case .stocks: StockSettings()
+            case .movie: MovieSettings()
             }
         }
         .navigationTitle(program.title)
