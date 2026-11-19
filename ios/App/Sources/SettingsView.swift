@@ -107,9 +107,11 @@ struct SettingsView: View {
                 ForEach(RemoteEvent.allCases) { event in
                     ActionPicker(title: event.title, selection: Binding(get: { model.ringAction(event) }, set: { model.ringMap[event.rawValue] = $0 }))
                 }
+                ActionPicker(title: "Double swipe right", selection: Binding(get: { model.ringDouble(.swipeRight) }, set: { model.ringMap["swipeRightDouble"] = $0 }))
+                ActionPicker(title: "Double swipe left", selection: Binding(get: { model.ringDouble(.swipeLeft) }, set: { model.ringMap["swipeLeftDouble"] = $0 }))
                 if !model.ringLast.isEmpty { LabeledContent("Last received", value: model.ringLast) }
             } header: { Text("Bluetooth ring or clicker") } footer: {
-                Text("Scrolling rings and page-turner clickers work by faking swipes, taps and pinches on the phone's screen, so Glasses Hub can only see them while it's open. Tap the remote icon at the top of the Display tab for a dark full-screen pad, leave it open, and each button on the ring becomes a step on the glasses. Press each button there once to see what it sends, then set what it should do here.\n\nA ring's camera button is different: it presses the volume button, which works with the phone locked. That's set under Volume buttons.")
+                Text("Scrolling rings and page-turner clickers work by faking swipes, taps and pinches on the phone's screen, so Glasses Hub can only see them while it's open. Tap the remote icon at the top of the Display tab for a dark full-screen pad, leave it open, and each button on the ring becomes a step on the glasses. Press each button there once to see what it sends, then set what it should do here.\n\nA ring's camera button is different: it presses the volume button, which works with the phone locked. That's set under Volume buttons.\n\nSwiping the same way twice quickly can do something else: to start with, double right selects and double left goes back to the dashboard. While a double is set, a single swipe that way waits about half a second to see whether a second follows. Set both doubles to Nothing to remove the wait.")
             }
             Section {
                 Text("Add a Glasses Hub action (Next, Previous, Select, Apps menu, Start or stop the display, Show text) in the Shortcuts app. Then assign that shortcut under Settings > Action Button, or Accessibility > Touch > Back Tap, or ask Siri for it.")
@@ -228,6 +230,7 @@ struct ActionPicker: View {
             Text("Previous").tag(3)
             Text("Select").tag(1)
             Text("Apps menu").tag(2)
+            Text("Dashboard").tag(5)
             Text("Nothing").tag(4)
         }
     }

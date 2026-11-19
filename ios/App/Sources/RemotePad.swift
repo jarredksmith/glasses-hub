@@ -106,7 +106,7 @@ private final class CatcherView: UIView, UIGestureRecognizerDelegate {
 
     private func send(_ event: RemoteEvent) {
         // one press of a ring button is one step, however many touches it fakes
-        guard Date().timeIntervalSince(lastSent) > 0.25 else { return }
+        guard Date().timeIntervalSince(lastSent) > 0.15 else { return }
         lastSent = Date()
         onEvent?(event)
     }

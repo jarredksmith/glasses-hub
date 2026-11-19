@@ -238,12 +238,35 @@ final class HubModel: ObservableObject {
     @Published var ringMap: [String: Int] { didSet { defaults.set(ringMap, forKey: "ringMap") } }
     @Published private(set) var ringLast = ""
     func ringAction(_ event: RemoteEvent) -> Int { ringMap[event.rawValue] ?? event.usual }
+    /// What the same sideways swipe twice in a row does. 4 is nothing, which also stops single swipes waiting.
+    func ringDouble(_ event: RemoteEvent) -> Int {
+        guard event == .swipeLeft || event == .swipeRight else { return 4 }
+        return ringMap[event.rawValue + "Double"] ?? (event == .swipeRight ? 1 : 5)
+    }
+    private var ringWaiting: (event: RemoteEvent, task: Task<Void, Never>)?
     /// Something arrived from a ring, clicker or keyboard while the remote pad was open.
     func ring(_ event: RemoteEvent) {
-        let action = ringAction(event)
-        let names = [0: "next", 1: "select", 2: "apps menu", 3: "previous", 4: "nothing"]
-        ringLast = event.title + " → " + (names[action] ?? "")
-        link.record("Ring: \(event.title).")
+        let double = ringDouble(event)
+        if let waiting = ringWaiting {
+            waiting.task.cancel(); ringWaiting = nil
+            if waiting.event == event, double != 4 { ringDo(event, double, twice: true); return }
+            ringDo(waiting.event, ringAction(waiting.event), twice: false)      // a different button: the first one still counts
+        }
+        guard double != 4 else { ringDo(event, ringAction(event), twice: false); return }
+        // hold a single swipe for a moment in case a second one follows
+        let task = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.ringWaiting = nil
+            self.ringDo(event, self.ringAction(event), twice: false)
+        }
+        ringWaiting = (event, task)
+    }
+    private func ringDo(_ event: RemoteEvent, _ action: Int, twice: Bool) {
+        let names = [0: "next", 1: "select", 2: "apps menu", 3: "previous", 4: "nothing", 5: "dashboard"]
+        let title = twice ? "Double " + event.title.lowercased() : event.title
+        ringLast = title + " → " + (names[action] ?? "")
+        link.record("Ring: \(title).")
         if link.isStandingBy { wakeDashboard(); return }
         guard link.isShowing else { return }
         gesture(action)
@@ -1529,6 +1552,10 @@ final class HubModel: ObservableObject {
         case 1: input(.select)
         case 3: input(.previous)
         case 4: break
+        case 5:
+            wakeDashboard()
+            if menuOpen { closeMenu() }
+            program = .dashboard
         default:
             link.record("Apps menu " + (menuOpen ? "closed." : "opened."))
             if menuOpen { closeMenu() } else { openMenu() }
