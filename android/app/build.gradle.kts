@@ -62,10 +62,9 @@ dependencies {
 
 // The tests draw the app's screens on a copy of Android that runs on any computer. Gradle fetches that
 // copy like any other dependency, so the tests don't need to reach the internet themselves.
-val androidAll by configurations.creating
-dependencies {
-    androidAll("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7")
-    androidAll("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
+// Each version gets its own configuration: in one, Gradle would keep only the newest.
+val androidAll = listOf("14-robolectric-10818077-i7", "15-robolectric-12650502-i7").map {
+    configurations.detachedConfiguration(dependencies.create("org.robolectric:android-all-instrumented:$it"))
 }
 val androidAllFolder = layout.buildDirectory.dir("android-all")
 val fetchAndroidAll by tasks.registering(Sync::class) {
