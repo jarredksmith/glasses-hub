@@ -72,4 +72,5 @@ tasks.withType<Test>().configureEach {
     doFirst { copy { from(androidAll); into(folder) } }
     systemProperty("robolectric.offline", "true")
     systemProperty("robolectric.dependency.dir", folder.absolutePath)
+    testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
 }

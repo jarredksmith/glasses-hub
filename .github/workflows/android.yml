@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - uses: gradle/actions/setup-gradle@v4
 
@@ -49,6 +49,7 @@ jobs:
           path: ${{ runner.temp }}/GlassesHub.apk
 
       - name: Put it on a draft release
+        continue-on-error: true    # the build is also kept as a download on the run itself
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -56,7 +57,10 @@ jobs:
           for old in $(gh release list --limit 50 --json tagName,isDraft --jq '.[] | select(.isDraft and (.tagName | startswith("android-"))) | .tagName'); do
             gh release delete "$old" --yes || true
           done
-          gh release create "android-${{ github.run_number }}" "$RUNNER_TEMP/GlassesHub.apk" --draft --target "${{ github.sha }}" \
-            --title "Glasses Hub for Android, build ${{ github.run_number }}" \
-            --notes "Test build for Android 8 and later. Download GlassesHub.apk on the phone, open it, and allow installing from the browser when Android asks. Open the RayNeo app and let it connect to the glasses before starting the display."
+          make() {
+            gh release create "android-${{ github.run_number }}" "$RUNNER_TEMP/GlassesHub.apk" --draft --target "${{ github.sha }}" \
+              --title "Glasses Hub for Android, build ${{ github.run_number }}" \
+              --notes "Test build for Android 8 and later. Download GlassesHub.apk on the phone, open it, and allow installing from the browser when Android asks. Open the RayNeo app and let it connect to the glasses before starting the display."
+          }
+          make || { sleep 20; make; }
           echo "::notice::Build ${{ github.run_number }} is on a draft release. Publish it from the repo's Releases page to give testers a link."
