@@ -457,3 +457,69 @@ class SpeechListener(private val context: Context) : RecognitionListener {
     override fun onEndOfSpeech() {}
     override fun onEvent(eventType: Int, params: Bundle?) {}
 }
+
+/**
+ * Streams the phone's microphone to Soniox's real-time API and hands back its messages, which carry
+ * the translation as it forms. Needs the wearer's own Soniox API key and an internet connection; the
+ * audio goes to Soniox's servers.
+ */
+@SuppressLint("MissingPermission")
+class CloudTranslator(private val context: Context) {
+    private val client by lazy { okhttp3.OkHttpClient.Builder().pingInterval(20, java.util.concurrent.TimeUnit.SECONDS).build() }
+    private var socket: okhttp3.WebSocket? = null
+    private var record: AudioRecord? = null
+    @Volatile private var run = 0
+    var running = false; private set
+    /** One message from the service, as received. */
+    var onMessage: ((String) -> Unit)? = null
+    /** The stream ended without being asked to, with the reason. */
+    var onDropped: ((String) -> Unit)? = null
+
+    /** Starts listening and translating. Returns what went wrong, or null. */
+    fun start(key: String, from: String, to: String, speakers: Boolean): String? {
+        stop()
+        val trimmed = key.trim()
+        if (trimmed.isEmpty()) return "Add your Soniox API key in the app, under Apps > Live translate."
+        if (!granted(context, Manifest.permission.RECORD_AUDIO)) return "Allow the microphone for Glasses Hub in the phone's Settings."
+        val size = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val mic = try { AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(size, 6400)).takeIf { it.state == AudioRecord.STATE_INITIALIZED } } catch (e: Exception) { null }
+            ?: return "The microphone isn't available."
+        try { mic.startRecording() } catch (e: Exception) { mic.release(); return "Couldn't start the microphone." }
+        run += 1
+        val mine = run
+        val config = Json.encode(mapOf("model" to "stt-rt-v6", "audio_format" to "s16le", "num_channels" to 1, "sample_rate" to 16000,
+            "language_hints" to listOf(from), "enable_endpoint_detection" to true, "enable_speaker_diarization" to speakers,
+            "translation" to mapOf("type" to "one_way", "target_language" to to)))
+        val request = okhttp3.Request.Builder().url("wss://stt-rt.soniox.com/transcribe-websocket").header("Authorization", "Bearer $trimmed").build()
+        val made = client.newWebSocket(request, object : okhttp3.WebSocketListener() {
+            override fun onOpen(webSocket: okhttp3.WebSocket, response: okhttp3.Response) { webSocket.send(config) }
+            override fun onMessage(webSocket: okhttp3.WebSocket, text: String) { mainHandler.post { if (mine == run && running) onMessage?.invoke(text) } }
+            override fun onFailure(webSocket: okhttp3.WebSocket, t: Throwable, response: okhttp3.Response?) {
+                val why = if (response?.code == 401 || response?.code == 403) "Soniox didn't accept the API key." else "The connection to Soniox dropped. Check your connection and your API key."
+                mainHandler.post { if (mine == run && running) { stop(); onDropped?.invoke(why) } }
+            }
+            override fun onClosed(webSocket: okhttp3.WebSocket, code: Int, reason: String) { mainHandler.post { if (mine == run && running) { stop(); onDropped?.invoke("Soniox closed the connection.") } } }
+        })
+        socket = made; record = mic; running = true
+        Thread({
+            val buffer = ByteArray(3200)                                // a tenth of a second
+            while (mine == run) {
+                val n = try { mic.read(buffer, 0, buffer.size) } catch (e: Exception) { -1 }
+                if (n < 0) break
+                if (n > 0) made.send(okio.ByteString.of(*buffer.copyOf(n)))
+            }
+        }, "hub-translate").start()
+        return null
+    }
+
+    fun stop() {
+        if (!running && socket == null) return
+        running = false; run += 1
+        val mic = record; record = null
+        try { mic?.stop() } catch (e: Exception) {}
+        try { mic?.release() } catch (e: Exception) {}
+        try { socket?.send("") } catch (e: Exception) {}                 // an empty text frame ends the stream politely
+        try { socket?.close(1000, null) } catch (e: Exception) {}
+        socket = null
+    }
+}

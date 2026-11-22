@@ -149,6 +149,17 @@ fun AppPage(model: HubModel, program: Program) {
             Toggle("Switch to Live text when text arrives", model.liveSwitches) { model.liveSwitches = it }
             if (model.live.text.isNotEmpty()) Action("Clear", danger = true) { model.clearLive() }
         }
+        Program.translate -> {
+            var key by remember { mutableStateOf(model.sonioxKey) }
+            Group(footer = "Translates while the person is still speaking, through Soniox's service. It needs your own API key from console.soniox.com and an internet connection, and the audio is sent to Soniox's servers. Soniox bills your account by the hour of audio. The key stays on this phone. On the glasses: look up to start or stop.") {
+                Choice("They speak", model.translateLanguages, model.translateFrom) { model.translateFrom = it }
+                Choice("Show me", model.translateLanguages, model.translateTo) { model.translateTo = it }
+                Field("Soniox API key", key, secret = true) { key = it; model.sonioxKey = it }
+                Toggle("Label who's speaking", model.translateSpeakers) { model.translateSpeakers = it }
+                Action(if (model.translateOn) "Stop listening" else "Start listening") { ask(listOf(Manifest.permission.RECORD_AUDIO)) { model.program = Program.translate; model.toggleTranslate() } }
+                Note(model.translateNote)
+            }
+        }
         Program.chords -> {
             Group("Song", "Chords go in square brackets where they change: [G]Amazing [C]grace. Add a fingering after a colon: [G:320003].") {
                 Choice("Chart", ChordChart.songs.map { it.id to it.title } + ("custom" to "My chart"), model.chordSong) { model.chordSong = it }

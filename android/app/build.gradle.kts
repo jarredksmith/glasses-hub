@@ -39,6 +39,7 @@ android {
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     lint { checkReleaseBuilds = false; abortOnError = false }
+    testOptions { unitTests { isIncludeAndroidResources = true; isReturnDefaultValues = true } }
 }
 
 dependencies {
@@ -50,4 +51,25 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation(kotlin("test"))
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+// The tests draw the app's screens on a copy of Android that runs on any computer. Gradle fetches that
+// copy like any other dependency, so the tests don't need to reach the internet themselves.
+val androidAll by configurations.creating
+dependencies {
+    androidAll("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7")
+    androidAll("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
+}
+tasks.withType<Test>().configureEach {
+    val folder = layout.buildDirectory.dir("android-all").get().asFile
+    doFirst { copy { from(androidAll); into(folder) } }
+    systemProperty("robolectric.offline", "true")
+    systemProperty("robolectric.dependency.dir", folder.absolutePath)
 }

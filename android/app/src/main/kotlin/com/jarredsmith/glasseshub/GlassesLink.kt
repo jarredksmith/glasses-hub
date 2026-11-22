@@ -402,16 +402,13 @@ class GlassesLink(private val context: Context) {
         val limit = maxOf(20, mtu - 3)
         val withResponse = out.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
         val streamed = out.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
-        if (withResponse && packet.size <= limit) {
+        // Android splits a write of up to 512 bytes into as many pieces as the link needs and has the glasses
+        // confirm the whole of it, which is how the iPhone app sends every ordinary screen.
+        if (withResponse && packet.size <= maxOf(limit, 512)) {
             if (!write(packet, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)) perform(session.writeFinished(false, now))
             return                                                  // answered in onCharacteristicWrite
         }
         if (!streamed) {
-            // No streamed writes: let Android split a long write itself (it can, up to 512 bytes).
-            if (withResponse && packet.size <= 512) {
-                if (!write(packet, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)) perform(session.writeFinished(false, now))
-                return
-            }
             note("A ${packet.size}-byte screen is too big for one write and the glasses don't take streamed writes.")
             perform(session.writeFinished(false, now)); return
         }

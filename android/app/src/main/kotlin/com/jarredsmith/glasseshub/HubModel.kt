@@ -29,6 +29,7 @@ enum class Program(val title: String, val blurb: String) {
     message("Message", "Put a line of text on the glasses and leave it there."),
     movie("Movie captions", "A film's real subtitles, kept in step by listening to the dialogue."),
     live("Live text", "Text shared from another app, or sent by a link."),
+    translate("Live translate", "Listens through the phone and shows a running translation."),
     chords("Guitar chords", "A chord chart that listens and moves on as you play."),
     drums("Drum trainer", "Learn a groove a bar at a time; it hears your kit."),
     metronome("Metronome", "Clicks from your phone; set the tempo with the crown."),
@@ -302,6 +303,20 @@ class HubModel(val context: Context) {
     /** Whether the dialogue can be followed by ear: only when the captions are in the language being spoken. */
     val movieCanListen: Boolean get() = movieLanguage == movieAudio
 
+    // Live translate (through Soniox's service)
+    private val cloudTranslator = CloudTranslator(context)
+    private var cloud = CloudCaption()
+    var translateFrom: String by s.text("translateFrom", "es") { if (translateOn) { stopTranslate(); toggleTranslate() } }
+    var translateTo: String by s.text("translateTo", "en") { if (translateOn) { stopTranslate(); toggleTranslate() } }
+    var translateSpeakers: Boolean by s.bool("translateSpeakers", false)
+    var sonioxKey: String
+        get() = secret("soniox")
+        set(value) { setSecret("soniox", value); pulse++ }
+    var translateOn by mutableStateOf(false); private set
+    var translateNote by mutableStateOf(""); private set
+    val translateLanguages = listOf("en" to "English", "es" to "Spanish", "zh" to "Chinese (Mandarin)", "vi" to "Vietnamese", "fr" to "French", "de" to "German",
+        "it" to "Italian", "pt" to "Portuguese", "ja" to "Japanese", "ko" to "Korean")
+
     // Favourites
     var favorites: List<String> by s.texts("favorites", listOf("dashboard", "scores", "news", "weather", "timer", "reader"))
     val favoriteApps: List<Program> get() = favorites.mapNotNull { n -> Program.entries.firstOrNull { it.name == n } }
@@ -311,7 +326,7 @@ class HubModel(val context: Context) {
     /** The menu on the glasses: the dashboard, then groups of apps. */
     val menuGroups = listOf(
         GroupOfApps("Info", listOf(Program.scores, Program.news, Program.agenda, Program.weather, Program.stocks, Program.feeds)),
-        GroupOfApps("Reading", listOf(Program.reader, Program.speed, Program.message, Program.movie, Program.live)),
+        GroupOfApps("Reading", listOf(Program.reader, Program.speed, Program.message, Program.movie, Program.live, Program.translate)),
         GroupOfApps("Music", listOf(Program.chords, Program.drums, Program.metronome, Program.tuner)),
         GroupOfApps("Tools", listOf(Program.timer, Program.picker)),
         GroupOfApps("Nearby", listOf(Program.tour, Program.planes)),
@@ -401,6 +416,8 @@ class HubModel(val context: Context) {
         ear.onHit = { hit -> heardHit(hit) }
         sound.onPitch = { hz -> heardPitch(hz) }
         listener.onPartial = { text -> heardPartial(text) }
+        cloudTranslator.onMessage = { data -> cloudMessage(data) }
+        cloudTranslator.onDropped = { reason -> if (translateOn) { translateOn = false; translateNote = reason; applyKeepAwake() } }
         link.onHoldExit = { if (holdSelects) { input(Input.select); true } else false }
         link.onDoubleClick = { if (!practice(3) && crownPaging && link.isShowing) gesture(doubleClickAction) }
         link.onCrown = { direction ->
@@ -461,7 +478,7 @@ class HubModel(val context: Context) {
 
     /** Keeps the app running with the phone's screen off, for as long as there's something to show. */
     private fun applyKeepAwake() = HubService.set(context, link.isRunning || popUps, mic = micInUse, location = locatorInUse)
-    private val micInUse: Boolean get() = tunerOn || chordOn || drumOn || movieOn
+    private val micInUse: Boolean get() = tunerOn || chordOn || drumOn || movieOn || translateOn
     private var locatorInUse = false
 
     private fun displayEnded(reason: String) {
@@ -509,7 +526,7 @@ class HubModel(val context: Context) {
             if (movie.state != MovieTracker.State.running) link.record("Movie captions: the room went quiet, holding.")
         }
         // captions and trainers should keep up with what's heard; speed reading sets its own pace
-        link.pace = if ((program == Program.live || program == Program.chords || program == Program.drums || program == Program.movie) && !menuOpen) 0.3
+        link.pace = if ((program == Program.live || program == Program.translate || program == Program.chords || program == Program.drums || program == Program.movie) && !menuOpen) 0.3
             else if (program == Program.speed && speedPlaying && !menuOpen) SpeedRead.interval(speedWPM, speedSize) else 1.0
         if (program == Program.speed && speedPlaying && !menuOpen) {
             val words = speedText()
@@ -653,6 +670,7 @@ class HubModel(val context: Context) {
             Program.dashboard, Program.message -> openMenu()
             Program.live -> if (!next) openMenu() else if (livePage < live.pageCount(screen) - 1) livePage += 1 else livePage = 0
             Program.feeds -> if (!next) openMenu() else refreshFeeds()
+            Program.translate -> if (!next) toggleTranslate()
             Program.stocks -> if (!next) openMenu() else stockPage += 1
             Program.tour ->
                 if (tourOpen) {
@@ -970,6 +988,7 @@ class HubModel(val context: Context) {
             Program.reader -> linesOf(readerText).let { if (it.isEmpty()) Card(listOf("Reader", "Paste some text in the app.")) else Card(it, scrolls = true) }
             Program.message -> Reader.note("", messageText, screen).let { if (it.isEmpty) Card(listOf("Message", "Type one in the app.")) else it }
             Program.live -> live.card(screen, livePage)
+            Program.translate -> translateCard(screen)
             Program.stocks -> Stocks.card(stockSymbols, stockQuotes, stockNote, stockPage, rich, screen)
             Program.movie -> movie.card(movieTitle, movieOn,
                 if (movieNote.isEmpty() && !movieCanListen) "Select to start at the first line. Turn the crown to move the captions earlier or later." else movieNote, now, screen)
@@ -1219,6 +1238,42 @@ class HubModel(val context: Context) {
         if (movieOn && movie.hear(text, now()) && program == Program.movie && link.isRunning) tick()
     }
 
+    // MARK: Live translate
+
+    fun toggleTranslate() {
+        if (translateOn) { stopTranslate(); return }
+        if (translateFrom == translateTo) { translateNote = "Pick two different languages."; return }
+        if (movieOn) stopMovie()
+        cloud = CloudCaption(translateSpeakers)
+        val problem = cloudTranslator.start(sonioxKey, translateFrom, translateTo, translateSpeakers)
+        translateOn = problem == null
+        translateNote = problem ?: ""
+        applyKeepAwake()
+    }
+    fun stopTranslate() {
+        if (!translateOn) return
+        cloudTranslator.stop()
+        translateOn = false
+        applyKeepAwake()
+    }
+    private fun cloudMessage(data: String) {
+        if (!translateOn) return
+        when (val event = cloud.take(data)) {
+            is CloudCaption.Event.Failed -> { cloudTranslator.stop(); translateOn = false; translateNote = "Soniox: " + event.message; applyKeepAwake() }
+            CloudCaption.Event.Finished -> { cloudTranslator.stop(); translateOn = false; applyKeepAwake() }
+            else -> {}
+        }
+        if (program == Program.translate && link.isRunning) tick()
+    }
+    private fun translateCard(screen: Screen): Card {
+        val from = translateLanguages.firstOrNull { it.first == translateFrom }?.second ?: translateFrom
+        val to = translateLanguages.firstOrNull { it.first == translateTo }?.second ?: translateTo
+        if (translateNote.isNotEmpty()) return Card(listOf("Live translate") + TextLayout.wrap(translateNote, screen.columns))
+        if (!translateOn) return Card(listOf("Live translate", "$from > $to", "Look up to start listening"))
+        val lines = cloud.lines(screen)
+        return if (lines.isEmpty()) Card(listOf("Live translate", "$from > $to", "Listening…")) else Card(lines)
+    }
+
     // MARK: Live text
 
     /** Text from outside the app: something shared to it, or a glasseshub:// link. `start` also turns the display on. */
@@ -1274,6 +1329,7 @@ class HubModel(val context: Context) {
         if (tunerOn) { sound.stopListening(); tunerOn = false; tunerReading = null }
         if ((chordOn && program != Program.chords) || (drumOn && program != Program.drums)) { ear.stop(); chordOn = false; drumOn = false; drumCalibration = null }
         if (movieOn && program != Program.movie) stopMovie()
+        if (translateOn && program != Program.translate) stopTranslate()
         speedPlaying = false
         applyKeepAwake()
     }
