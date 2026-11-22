@@ -67,10 +67,14 @@ dependencies {
     androidAll("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7")
     androidAll("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
 }
+val androidAllFolder = layout.buildDirectory.dir("android-all")
+val fetchAndroidAll by tasks.registering(Sync::class) {
+    from(androidAll)
+    into(androidAllFolder)
+}
 tasks.withType<Test>().configureEach {
-    val folder = layout.buildDirectory.dir("android-all").get().asFile
-    doFirst { copy { from(androidAll); into(folder) } }
+    dependsOn(fetchAndroidAll)
     systemProperty("robolectric.offline", "true")
-    systemProperty("robolectric.dependency.dir", folder.absolutePath)
+    systemProperty("robolectric.dependency.dir", androidAllFolder.get().asFile.absolutePath)
     testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
 }
