@@ -1,0 +1,58 @@
+# Builds the Android app and its tests on every push that touches android/, and leaves the installable
+# file (APK) two places: on the run's own page, and on a draft release that only the repo's owner can see
+# until it's published.
+name: Android app
+
+on:
+  push:
+    branches: [android-app]
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Test the core (wire format, layout, app logic)
+        working-directory: android
+        run: ./gradlew --no-daemon :core:test
+
+      - name: Build the app
+        working-directory: android
+        env:
+          SUBTITLE_KEY: ${{ secrets.SUBTITLE_KEY }}
+        run: |
+          ./gradlew --no-daemon :app:assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/GlassesHub.apk"
+          ls -la "$RUNNER_TEMP/GlassesHub.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GlassesHub-android-${{ github.run_number }}
+          path: ${{ runner.temp }}/GlassesHub.apk
+
+      - name: Put it on a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # one draft at a time: the newest build replaces the last unpublished one
+          for old in $(gh release list --limit 50 --json tagName,isDraft --jq '.[] | select(.isDraft and (.tagName | startswith("android-"))) | .tagName'); do
+            gh release delete "$old" --yes || true
+          done
+          gh release create "android-${{ github.run_number }}" "$RUNNER_TEMP/GlassesHub.apk" --draft --target "${{ github.sha }}" \
+            --title "Glasses Hub for Android, build ${{ github.run_number }}" \
+            --notes "Test build for Android 8 and later. Download GlassesHub.apk on the phone, open it, and allow installing from the browser when Android asks. Open the RayNeo app and let it connect to the glasses before starting the display."
+          echo "::notice::Build ${{ github.run_number }} is on a draft release. Publish it from the repo's Releases page to give testers a link."
