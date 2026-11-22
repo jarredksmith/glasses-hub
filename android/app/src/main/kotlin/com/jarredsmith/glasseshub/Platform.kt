@@ -394,6 +394,8 @@ class SpeechListener(private val context: Context) : RecognitionListener {
     /** A finished phrase. */
     var onFinal: ((String) -> Unit)? = null
     private var generation = 0
+    private var onDevice = false
+    private var avoidOnDevice = false
 
     /** Starts listening in the given language ("es-ES"). Returns what went wrong, or null. */
     fun start(locale: String): String? {
@@ -401,6 +403,7 @@ class SpeechListener(private val context: Context) : RecognitionListener {
         if (!granted(context, Manifest.permission.RECORD_AUDIO)) return "Allow the microphone for Glasses Hub in the phone's Settings."
         if (!SpeechRecognizer.isRecognitionAvailable(context)) return "This phone has no speech recognition service. Install or turn on Google's speech services."
         this.locale = locale
+        avoidOnDevice = false
         running = true
         begin()
         return null
@@ -417,7 +420,12 @@ class SpeechListener(private val context: Context) : RecognitionListener {
 
     private fun begin() {
         if (!running) return
-        val made = recognizer ?: (try { SpeechRecognizer.createSpeechRecognizer(context) } catch (e: Exception) { null })?.also { it.setRecognitionListener(this); recognizer = it }
+        // The recogniser built into the phone is quieter (no start and stop tones) and works offline, so it
+        // goes first where there is one; the ordinary one takes over if it doesn't know the language.
+        val made = recognizer ?: (try {
+            if (!avoidOnDevice && Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) { onDevice = true; SpeechRecognizer.createOnDeviceSpeechRecognizer(context) }
+            else { onDevice = false; SpeechRecognizer.createSpeechRecognizer(context) }
+        } catch (e: Exception) { null })?.also { it.setRecognitionListener(this); recognizer = it }
         if (made == null) { running = false; return }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -444,7 +452,12 @@ class SpeechListener(private val context: Context) : RecognitionListener {
     }
     override fun onError(error: Int) {
         // "no speech" and "busy" are routine: start listening again; a recogniser that's stuck is rebuilt
-        if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) {
+        if (onDevice && (error == 12 || error == 13 || error == SpeechRecognizer.ERROR_SERVER)) {        // the built-in one can't do this language
+            avoidOnDevice = true
+            val old = recognizer; recognizer = null
+            try { old?.destroy() } catch (e: Exception) {}
+            again(200)
+        } else if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) {
             val old = recognizer; recognizer = null
             try { old?.destroy() } catch (e: Exception) {}
             again(500)

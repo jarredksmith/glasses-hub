@@ -30,6 +30,10 @@ jobs:
         working-directory: android
         run: ./gradlew --no-daemon :core:test
 
+      - name: Start the app's model and draw every screen
+        working-directory: android
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+
       - name: Build the app
         working-directory: android
         env:
